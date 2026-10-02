@@ -13,8 +13,8 @@ from _blackbox_loader import load_blackbox
 cli = load_blackbox("cli")
 config = load_blackbox("config")
 constants = load_blackbox("constants")
-STREAM_ENV = "DKG_EXPERIMENTAL_EXACT_BATCH_STREAM"
-PREPARE_ENV = "DKG_EXPERIMENTAL_VM_RECOVERY_PREFETCH"
+STREAM_ENV = "DKG_EXACT_BATCH_STREAM_ENABLED"
+PREPARE_ENV = "DKG_VM_RECOVERY_PREFETCH_ENABLED"
 RUNTIME_ENVS = (STREAM_ENV, PREPARE_ENV)
 
 
@@ -68,7 +68,7 @@ def test_native_start_and_live_policy_preserve_explicit_flag(
     other = next(item for item in RUNTIME_ENVS if item != name)
     assert cli._dkg_sync_environment(installation)[name] == value
     assert cli._dkg_runtime_sync_settings(installation)[name] == value
-    # One explicit choice never changes the independent experiment.
+    # One explicit choice never changes the independent switch.
     assert cli._dkg_runtime_sync_settings(installation)[other] == "1"
 
 
@@ -114,7 +114,7 @@ def test_managed_sync_adopts_runtime_once_then_reuses_worker(
     (home / "daemon.pid").write_text("4242\n", encoding="utf-8")
     if explicit is not None:
         monkeypatch.setenv(name, explicit)
-    # The worker already runs every other runtime experiment; only `name` varies.
+    # The worker already runs every other runtime switch; only `name` varies.
     live_env = dict(cli._DKG_NATIVE_SYNC_SETTINGS)
     live_env.update({other: "1" for other in RUNTIME_ENVS if other != name})
     if live is not None:
@@ -164,7 +164,7 @@ def test_managed_sync_adopts_runtime_once_then_reuses_worker(
     assert state["complete"] is False
 
 
-def test_worker_started_before_either_experiment_restarts_exactly_once(
+def test_worker_started_before_either_switch_restarts_exactly_once(
     installation, monkeypatch
 ):
     """A node started by an older Blackbox adopts both runtime flags in one restart."""

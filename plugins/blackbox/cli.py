@@ -42,12 +42,12 @@ _DKG_NATIVE_SYNC_SETTINGS = {
     "DKG_VM_RECONCILER_ENABLED": "1",
 }
 
-_DKG_EXACT_BATCH_STREAM_ENV = "DKG_EXPERIMENTAL_EXACT_BATCH_STREAM"
-_DKG_VM_RECOVERY_PREFETCH_ENV = "DKG_EXPERIMENTAL_VM_RECOVERY_PREFETCH"
-# Runtime-only experiments for the default public native path. DKG treats an
-# absent flag as disabled and ignores one it does not know, so these are safe to
-# pass to an older runtime; an operator's explicit value always wins.
-_DKG_RUNTIME_EXPERIMENT_ENVS = (
+_DKG_EXACT_BATCH_STREAM_ENV = "DKG_EXACT_BATCH_STREAM_ENABLED"
+_DKG_VM_RECOVERY_PREFETCH_ENV = "DKG_VM_RECOVERY_PREFETCH_ENABLED"
+# Runtime-only switches for the default public native path. DKG treats an
+# absent switch as disabled and ignores one it does not know, so these are safe
+# to pass to an older runtime; an operator's explicit value always wins.
+_DKG_RUNTIME_SWITCH_ENVS = (
     _DKG_EXACT_BATCH_STREAM_ENV,
     _DKG_VM_RECOVERY_PREFETCH_ENV,
 )
@@ -592,7 +592,7 @@ def _dkg_runtime_sync_settings(cfg: BlackboxConfig) -> Dict[str, str]:
 
     settings = _dkg_steady_sync_settings(cfg)
     if native_sync.handles_default_public(cfg):
-        for name in _DKG_RUNTIME_EXPERIMENT_ENVS:
+        for name in _DKG_RUNTIME_SWITCH_ENVS:
             settings[name] = os.environ.get(name, "1")
     return settings
 
@@ -645,10 +645,10 @@ def _managed_dkg_sync_mode_matches(
         process_env = psutil.Process(pid).environ()
     except (OSError, TypeError, ValueError, psutil.Error):
         return False
-    # DKG treats an absent experimental flag as disabled, so an explicit 0
-    # need not restart a worker that already has that experiment disabled.
+    # DKG treats an absent switch as disabled, so an explicit 0 need not
+    # restart a worker that already has that switch off.
     return all(
-        process_env.get(name, "0" if name in _DKG_RUNTIME_EXPERIMENT_ENVS else None)
+        process_env.get(name, "0" if name in _DKG_RUNTIME_SWITCH_ENVS else None)
         == value
         for name, value in expected.items()
     )
