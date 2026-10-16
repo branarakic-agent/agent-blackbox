@@ -48,7 +48,7 @@ def test_sharing_is_on_by_default_and_an_opt_out_stops_it(real_consent, monkeypa
     assert real_consent.withdraw() and not real_consent.withdraw()                    # opt out once; already off after
     assert real_consent.current().withdrawn_at and not real_consent.in_force()
     entry = real_consent.record()                                                     # opt back in
-    assert entry is not None and entry.terms_version == "1.3" and real_consent.in_force()
+    assert entry is not None and entry.terms_version == "1.4" and real_consent.in_force()
     monkeypatch.setattr(real_consent, "terms_text", lambda: "Version: 2.0\nnew terms")
     assert real_consent.in_force()                                                    # new terms never pause sharing
 
@@ -103,7 +103,7 @@ def test_the_sharing_verbs_record_and_withdraw(real_consent, capsys):
     assert report_rights.withdraw_consent() == 0 and "already off" in capsys.readouterr().out
     assert report_rights.record_consent() == 0 and real_consent.in_force()
     out = capsys.readouterr().out
-    assert "Version: 1.3" in out and "Consent recorded" in out
+    assert "Version: 1.4" in out and "Consent recorded" in out
     assert report_rights.wants_local_verb(argparse.Namespace(consent=True))
     assert report_rights.wants_local_verb(argparse.Namespace(withdraw_consent=True))
 
@@ -148,7 +148,7 @@ def test_the_documents_ship_with_the_plugin():
     terms = consent_module.terms_text()
     for command in ("--withdraw-consent", "--erase-identity", "--export", "--retract"):
         assert command in terms                                                               # the rights are real commands
-    assert consent_module.terms_version() == "1.3"
+    assert consent_module.terms_version() == "1.4"
 
 
 @pytest.mark.parametrize("garbage", ["{nope", "[]", '"text"', "null"])

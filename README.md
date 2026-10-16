@@ -20,15 +20,15 @@ community threat intelligence, and flags or blocks it before damage is done.
 |---|---|
 | **Protects** | a Hermes agent out of the box; OpenClaw workspaces via a bundled bridge (see [Hosts](#hosts)) |
 | **Catches** | prompt injection, dangerous commands, sensitive-file access, secret exposure, malicious packages, unsafe skills, known-bad indicators |
-| **Learns from** | Umanitek's **verified graph** (may block) and the open **community graph** (flags only) on the OriginTrail DKG |
+| **Learns from** | Umanitek's **verified graph** on the OriginTrail DKG: its verified rules (may block) and the open **community reports** in its shared memory (flag only) |
 | **Shows** | every finding in a local dashboard and audit trail |
-| **Shares** | signed, privacy-safe threat statements with the community graph — on by default, one command to turn off (`blackbox report --disable-sharing`) |
+| **Shares** | signed, privacy-safe threat statements into the graph's shared memory — on by default, one command to turn off (`blackbox report --disable-sharing`) |
 
 _This README documents the mainline as of 2026-10-14. The file inventory below is generated from the code (`scripts/blackbox-readme-inventory.py`)._
 
 **Contents:** [How it works](#how-it-works) · [Install](#install) · [Commands](#commands) ·
 [What it catches](#what-it-catches) · [The three tiers of intelligence](#the-three-tiers-of-intelligence) ·
-[The community graph](#the-community-graph) · [Architecture](#architecture) · [File structure](#file-structure) · [Hosts](#hosts) ·
+[Community reports](#community-reports) · [Architecture](#architecture) · [File structure](#file-structure) · [Hosts](#hosts) ·
 [Dashboard](#dashboard) · [Configuration](#configuration) · [Privacy and your rights](#privacy-and-your-rights) ·
 [About Umanitek](#about-umanitek) · [Legal](#legal) · [License](#license)
 
@@ -42,11 +42,11 @@ flowchart LR
     B --> C[Name the action<br/>deterministic identifier]
     C --> D{Check}
     D -->|verified graph match| E[FLAG or BLOCK]
-    D -->|community graph match| F[FLAG only]
+    D -->|community report match| F[FLAG only]
     D -->|built-in heuristic| G[FLAG]
     D -->|clean| H[Allow]
     E & F & G --> I[Record locally<br/>dashboard + audit trail]
-    G -->|sharing on| J[Share a signed report<br/>to the community graph]
+    G -->|sharing on| J[Share a signed report<br/>to the graph's shared memory]
 ```
 
 | Step | What happens | Where |
@@ -56,7 +56,7 @@ flowchart LR
 | **Check** | The identifier is looked up in the compiled ruleset: verified rules, community rules, built-in heuristics | `detection/`, `ruleset/` |
 | **Respond** | Audit mode records. Block mode stops verified threats at or above `block_severity`, plus your protected paths and secret exfiltration | `guard/hooks.py` |
 | **Record** | Every finding is written to the local audit trail and shown live in the dashboard | `audit/`, `dashboard/` |
-| **Share** | Unless you turned sharing off, a signed privacy-safe statement goes to the community graph | `community/` |
+| **Share** | Unless you turned sharing off, a signed privacy-safe statement goes to the graph's shared memory | `community/` |
 
 Everything is local and offline on the hot path, in microseconds. A Blackbox fault never breaks the
 agent: every boundary fails open.
@@ -83,8 +83,7 @@ iwr -useb blackbox-w.umanitek.ai | iex
 |---|---|
 | Hermes (the host runtime) + the Blackbox plugin | `blackbox` becomes a shortcut for `hermes blackbox` |
 | A local DKG node | `http://127.0.0.1:9320`, isolated home, no funds needed to read |
-| The verified graph subscription | Umanitek's curated threat graph (`context_graph_id`) |
-| The community graph pair | from `BLACKBOX_COMMUNITY_GRAPH_ID` + `BLACKBOX_COMMUNITY_GRAPH_PEER_ID` when set |
+| The verified graph subscription | Umanitek's curated threat graph (`context_graph_id`), with the shared memory the community reports live in |
 | `blackbox attach` | wires every Hermes home and OpenClaw workspace on the machine |
 | The dashboard | started at `http://127.0.0.1:9700`, loopback only |
 
@@ -157,7 +156,7 @@ bash blackbox-install.sh
 | `blackbox attach` / `detach` | protect every local agent at once / turn it off |
 | `blackbox setup-llm` | optional second-opinion LLM reviewer for prompt injection (flags only, verdicts stay local) |
 
-### Community graph (sharing is on by default)
+### Community reports (sharing is on by default)
 
 | Command | What it does |
 |---|---|
@@ -259,8 +258,8 @@ medium, alert-only risk.
 
 | Tier | Who writes it | Where it lives | Enforcement | Shown as |
 |---|---|---|---|---|
-| **Verified** | Umanitek's curator only | the verified graph (`context_graph_id`), DKG verifiable memory | FLAG, and BLOCK in block mode | Verifiable |
-| **Community** | every protected node with sharing on, under its own signature | the community graph (`community_graph_id`), DKG shared working memory | FLAG only, never block | Community |
+| **Verified** | Umanitek's curator only | the verified graph (`context_graph_id`), DKG Verified Memory | FLAG, and BLOCK in block mode | Verifiable |
+| **Community** | every protected node with sharing on, under its own signature | the same graph's shared memory, sub-graph `reports` | FLAG only, never block | Community |
 | **Local** | this machine (heuristics, protected paths, secret exposure) | the local audit trail | FLAG; protected paths and secret exfiltration BLOCK in block mode | Local |
 
 Threats should not have to be rediscovered one agent at a time: a verified rule protects every node
@@ -268,11 +267,13 @@ the moment it syncs, and a community report warns every node within about half a
 
 ---
 
-## The community graph
+## Community reports
 
-The verified graph is reviewed intelligence. The community graph is its scouting network: an open
-graph on the DKG that any node contributes to and learns from, so threats surface before a reviewer
-has seen them.
+The verified rules are reviewed intelligence. The community reports are their scouting network: any
+node contributes to them and learns from them, in the verified graph's shared memory, so threats
+surface before a reviewer has seen them. The separate community graph is retired: the reports a node
+shared there and still keeps alive move over on their own, signed again for the one graph, at most
+100 a day.
 
 ### What happens when an agent catches something
 
@@ -285,7 +286,7 @@ sequenceDiagram
     A->>A: finding → closed-schema report (no prompt, path or content)
     A->>A: gates: sharing on · source · severity · schema · identity
     A->>A: sign (Ed25519, reporter key on this machine)
-    A->>NA: write + seal + share to shared working memory
+    A->>NA: write + seal + share to the graph's shared memory (sub-graph reports)
     NA-->>NB: DKG replication (seconds)
     B->>NB: pulse every 20 s: read reports, retractions, disputes
     B->>B: verify signature, network and graph · drop forgeries
@@ -306,6 +307,7 @@ Measured on five mainnet nodes: a report filed on one node is on the others with
 | injection class | `LLM01` | OWASP Top 10 for LLM applications, `LLM01` to `LLM10` |
 | dependency evidence | `kind=malware`, `reason=typosquat` | malware only, never vulnerabilities; reasons `typosquat` `install-hook` `exfil` `internal-mirror-collision` or `advisory:<id>` |
 | skill evidence | `registry=clawhub` or `artifact_hash=<sha256>` | named only from a public registry (`mcp-registry` `clawhub` `npm` `pypi` `oci` `mcpb`); local skills by code hash, never by name |
+| reporter | the node's DKG agent address and reporter public key | pseudonymous: nothing in Blackbox links them to a person |
 | signed envelope | one literal | Ed25519 over the fields above plus network and graph id |
 
 There is no field for prompt text, commands, paths or file contents. A report that does not fit the
@@ -320,43 +322,56 @@ schema is never built. Secret, LLM-reviewer and custom-rule findings never leave
 | One subject per reporter and threat | two reporters of one threat are two signers by construction |
 | Unsigned, foreign-network or future-dated rows are dropped | forged traffic shows up as a drop count, not as a threat |
 
-### Who is trusted: two authorities
+### Who is trusted
 
-A report only moves enforcement when someone accountable stands behind it. Two separate authorities
-can do that. Each has its own root key, its own three curator keys (any two must sign), and its own
-place to publish. Neither can speak for the other.
+A report only moves enforcement when someone accountable stands behind it. Blackbox knows two
+authorities. Each has its own root key and its own three curator keys (any two must sign), and
+neither can speak for the other. Under one graph only the **verified authority**, Umanitek's,
+speaks: the **community authority** may speak only in a graph of its own, so it is dormant and no
+reader trusts a community root.
 
 ```mermaid
 flowchart LR
-    subgraph CG["Community graph (open: anyone writes)"]
+    subgraph SM["Shared memory, sub-graph reports (open: anyone writes)"]
         R["Signed reports"] --> Q["Curator queue"]
-        CR["Community root key<br/>pinned per graph"] --> CM["Community key manifest<br/>3 curator keys, any 2 sign"]
-        CM --> TL["Trusted-reporter list"]
-        Q --> CF["Confirmation<br/>with signed evidence"]
-        CM --> CF
-        CF --> PL["Confirmed pool"]
+        Q --> N["Curator notices<br/>confirm · reject · defer"]
     end
-    subgraph VG["Verified graph (one publisher)"]
-        VR["Verified root key<br/>pinned per network"] --> VM["Verified key manifest"]
+    subgraph VMEM["Verified Memory (one publisher)"]
+        VR["Verified root key<br/>pinned per network"] --> VM["Verified key manifest<br/>3 curator keys, any 2 sign"]
+        VM --> TL["Trusted-reporter list"]
         VM --> VRULE["Verified rules"]
+        VM --> P["Promotion statement"]
+        P -->|points to| PR["Promoted report<br/>as its reporter signed it"]
     end
-    TL --> FLAG["FLAG on every reader"]
-    PL --> FLAG
-    PL -. "export bundle, checked offline from one root key" .-> VM
+    VM -. "signs" .-> N
+    Q -. "promote" .-> P
+    N --> FLAG["FLAG on every reader"]
+    TL --> FLAG
+    P --> VRULE
     VRULE --> BLOCK["BLOCK in block mode"]
 ```
 
-| | Community authority | Verified authority |
+| | Community authority (dormant) | Verified authority |
 |---|---|---|
-| Root key is pinned | per community graph | per network |
-| Its statements live in | the community graph | the verified graph (notices in the community graph) |
+| Root key is pinned | per graph of its own; none under one graph | per network |
+| Its statements live in | a graph of its own | Verified Memory; its notices in shared memory |
 | List and delist trusted reporters | yes, for at most 90 days per listing | yes |
 | Confirm, reject or defer a community threat | yes; a confirmation must cite signed evidence | yes |
 | Pause community intake | yes, at most 7 days | yes |
-| Promote into the verified graph, revoke a verified rule, publish the kill list | never | yes |
+| Promote a report into Verified Memory, revoke a verified rule, publish the kill list | never | yes |
 | Strongest effect on a reader | FLAG | BLOCK in block mode |
 
-**When both have spoken, the most restrictive word wins**
+**Promoted reports.** Promotion publishes one report, by default the earliest shared for the threat,
+exactly as its reporter signed it, to Verified Memory, next to the promotion statement that points to
+it. Reports of malicious packages, indicators, skills and file access can be promoted; an injection
+report carries only a hash of its pattern and never is. A promoted report is permanent: nobody can
+remove or change it, and erasing an identity does not reach it. Anyone can see which report a
+verified rule came from, and so the reporter's DKG agent address and public key. A retraction or a
+revocation still stops it counting on every reader. The reporter terms (version 1.4) say this before
+anyone shares.
+
+**When both have spoken, the most restrictive word wins** (under one graph only the verified
+authority speaks)
 
 | Question | Rule |
 |---|---|
@@ -364,7 +379,7 @@ flowchart LR
 | What is the verdict on this threat? | a rejection or revocation beats a live deferral, which beats a confirmation; the verified authority wins a tie |
 | Is intake paused? | yes if either authority paused it |
 
-**The confirmed pool and the hand-off**
+**The confirmed pool and the hand-off** (dormant with the community authority)
 
 A threat is in the confirmed pool while a community confirmation with a signed evidence reference
 stands for it. The evidence is one of three things: a public advisory id, a registry's own action,
@@ -372,7 +387,7 @@ or the hash of an artifact a curator reproduced. `blackbox curate export` writes
 file holding only signed statements. Whoever receives it checks the whole file offline with one
 command and the community root key; a damaged entry fails alone, by name.
 
-**What a reader does to stay safe in a graph anyone can write**
+**What a reader does to stay safe in shared memory anyone can write**
 
 | Protection | What it does |
 |---|---|
@@ -444,8 +459,8 @@ voice. A failed read keeps the last good state instead of wiping the tier.
 
 | Mechanism | Setting | What it does |
 |---|---|---|
-| Pulse | `community_poll_interval` (20 s) | re-reads the graph between full refreshes |
-| Keep-alive | `community_keepalive_epoch_days` (10) | re-publishes your own reports before the network's memory expires |
+| Pulse | `community_poll_interval` (20 s) | re-reads the reports between full refreshes |
+| Keep-alive | `community_keepalive_epoch_days` (10) | re-shares your own reports before their shared-memory copies expire |
 | Retry queue | built in | a refused share is retried with backoff (a fresh node is refused for minutes on mainnet) |
 | Author budget | built in | caps what one signer can add per day on the reader's side |
 | Allowlist and warninglist | shipped; local additions in `$BLACKBOX_HOME/allowlist.json` | holds reports that name an allowlisted domain or a popular package wholesale; supports reports of look-alike names |
@@ -454,17 +469,19 @@ voice. A failed read keeps the last good state instead of wiping the tier.
 
 ### Finding the graph
 
-The community graph is a public, unregistered DKG graph: no join step, no approval. A fresh node
-cannot discover it on its own, so the graph id and its owner's peer id travel as a pair.
+The verified graph is registered on chain and public: a fresh node finds it on chain, with no join
+step and no approval. One subscription, shared memory included, brings both tiers; the catch-up asks
+the publisher's node (`graph_peer_id`) first.
 
 ```mermaid
 flowchart LR
-    I[Installer or config:<br/>community_graph_id + community_graph_peer_id] --> P[First pulse]
-    P --> C[Dial the owner by peer id<br/>DHT-resolved, ~5 s]
-    C --> S[Subscribe with shared memory]
-    S --> R[Catch-up replays the graph<br/>~20 s]
-    R --> D[Community tier live<br/>under 80 s from install]
+    I[Installer or config:<br/>context_graph_id] --> S[Subscribe with shared memory]
+    S --> R[Catch-up replays the graph:<br/>Verified Memory and shared memory]
+    R --> D[Verified and community tiers live]
 ```
+
+A node set up by an older release followed only the graph's Verified Memory; Blackbox adds the shared
+memory on its own.
 
 ---
 
@@ -486,17 +503,17 @@ flowchart TB
         CO -->|reads and writes| NO
         SY[sync<br/>keeps the node current] --> NO
     end
-    VG[Verified graph<br/>Umanitek's curator writes] -->|syncs down, read only| NO
-    NO <-->|signed statements| CG[Community graph<br/>every sharing node writes]
+    VG[Verified graph<br/>Verified Memory: Umanitek's curator writes<br/>shared memory: every sharing node writes] -->|syncs down| NO
+    NO -->|signed statements, into shared memory| VG
 ```
 
-Two graphs live on one isolated local DKG node, so Blackbox never replaces or modifies another DKG
-installation.
+One graph, both of its layers, lives on one isolated local DKG node, so Blackbox never replaces or
+modifies another DKG installation.
 
-| Graph | Config key | DKG memory tier | Who writes | Power |
-|---|---|---|---|---|
-| Verified | `context_graph_id` | verifiable memory | Umanitek's curator only | may block |
-| Community | `community_graph_id` | shared working memory | every sharing node, signed | flags only |
+| Layer of `context_graph_id` | DKG memory tier | Who writes | Power |
+|---|---|---|---|
+| Verified rules and promoted reports | Verified Memory | Umanitek's curator only | may block |
+| Community reports, sub-graph `reports` | shared memory | every sharing node, signed | flags only |
 
 **Modules** (`plugins/blackbox/`, thirteen feature modules and one kernel)
 
@@ -1143,7 +1160,7 @@ default protected paths, so an agent reaching into it is flagged, and blocked in
 | what a report contains | `community/report_schema.py`, `community/report_builder.py` |
 | stages, thresholds, the partner rule | `community/stages.py` |
 | how long a community statement lives | `community/statements/lifetimes.py` |
-| how a node finds the community graph | `community/membership.py` |
+| how a node subscribes to the graph's shared memory | `community/membership.py` |
 | a default, a config key, a closed vocabulary | `kernel/config.py`, `kernel/constants.py` |
 | a dashboard panel | `dashboard/static/index.html`, `dashboard/server.py`, `dashboard/community_routes.py` |
 | a `blackbox` command | `cli.py`, then the module's `command.py` |
@@ -1207,14 +1224,12 @@ environment override, for example `BLACKBOX_MODE` or `BLACKBOX_REPORT`.
 | `mode` | `audit` | `audit` or `block` |
 | `dkg_url` | `http://127.0.0.1:9320` | Blackbox-managed local DKG node |
 | `dkg_home` | `<agent-blackbox>/.dkg` | isolated DKG node config, token, pid and cache |
-| `context_graph_id` | `0x37b1Fdfd…/agent-blackbox-vm` | the verified threat graph |
+| `context_graph_id` | `0x37b1Fdfd…/agent-blackbox-vm` | the threat graph: verified rules in its Verified Memory, community reports in its shared memory |
 | `graph_peer_id` | bundled publisher peer | authoritative source for the verified graph |
-| `community_graph_id` | `0x37b1Fdfd…/agent-blackbox-community` | the community graph this node reads and writes; empty keeps every community path off |
-| `community_graph_peer_id` | `""` | peer id of the node that owns the community graph; dialled before the first subscribe; ships as a pair with the graph id |
-| `report` | `true` | share privacy-safe reports to the community graph (on by default; `blackbox report --disable-sharing` turns it off) |
+| `report` | `true` | share privacy-safe reports into the graph's shared memory (on by default; `blackbox report --disable-sharing` turns it off) |
 | `report_min_severity` | `high` | lowest severity a built-in discovery candidate must reach to be flagged or shared |
 | `daily_report_limit` | `100` | cap on outbound reports per day; never "no cap" |
-| `community_poll_interval` | `20` | seconds between community-graph pulses (0 off) |
+| `community_poll_interval` | `20` | seconds between community pulses (0 off) |
 | `community_keepalive_epoch_days` | `10` | re-publish cadence for your own reports (0 off) |
 | `community_shadow` | `false` | compute stages, enforce only monitor, log what would have flagged |
 | `sync_interval` | `3600` | seconds between verified-graph refreshes |
@@ -1225,9 +1240,11 @@ environment override, for example `BLACKBOX_MODE` or `BLACKBOX_REPORT`.
 | `detection.<category>.min_severity` | `info` | quiet a category below this level |
 | `protected_paths` | `[]` | your own files and folders: they block in block mode and never leave the machine |
 
-Full options, including the LLM reviewer, in the [plugin README](plugins/blackbox/README.md). The
-installer also accepts `BLACKBOX_COMMUNITY_GRAPH_ID` and `BLACKBOX_COMMUNITY_GRAPH_PEER_ID` (set as a
-pair) and writes them into the config.
+Full options, including the LLM reviewer, in the [plugin README](plugins/blackbox/README.md).
+`community_graph_id` and `community_graph_peer_id` are retired with the separate community graph. The
+installer removes them from `config.yaml`; if an older config or the `BLACKBOX_COMMUNITY_GRAPH_ID` and
+`BLACKBOX_COMMUNITY_GRAPH_PEER_ID` variables still set them, Blackbox ignores them and says so once in
+its log.
 
 ---
 
@@ -1246,7 +1263,9 @@ and the controller map ship in `plugins/blackbox/docs/`.
 
 What erasure cannot do: statements already replicated by other nodes stay in their copies (a shared
 graph cannot delete); a retraction stops them counting. Erasure rotates your signing key; the node's
-wallet address, which every statement carries as the reporter, is unchanged.
+wallet address, which every statement carries as the reporter, is unchanged. A report the curators
+promoted stays in Verified Memory for good, with the key and address it was signed with; a
+retraction stops it counting there too.
 
 | Never shared | Enforced by |
 |---|---|
