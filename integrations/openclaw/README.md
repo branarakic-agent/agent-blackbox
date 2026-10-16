@@ -112,6 +112,7 @@ override (env wins).
 |-----|---------|-----|---------|
 | `mode` | `audit` | `BLACKBOX_MODE` | `audit` \| `block` |
 | `contextGraphId` | `0x37b1Fdfd…/agent-blackbox-vm` | `BLACKBOX_CONTEXT_GRAPH_ID` | Public verified threat graph id |
+| `graphPeerId` | bundled publisher peer | `BLACKBOX_GRAPH_PEER_ID` | the graph's publisher node, dialled before the subscription and re-dialled to keep the link |
 | `dkgUrl` | `http://127.0.0.1:9320` | `BLACKBOX_DKG_DAEMON_URL` / `BLACKBOX_DKG_URL` | Blackbox-managed local node |
 | `dkgHome` | `~/.hermes/blackbox/dkg` | `BLACKBOX_DKG_HOME` | isolated DKG config, API token, pid, and cache |
 | `syncInterval` | `300` | `BLACKBOX_SYNC_INTERVAL` | seconds between ruleset refresh |
