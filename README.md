@@ -471,15 +471,21 @@ voice. A failed read keeps the last good state instead of wiping the tier.
 
 ### Finding the graph
 
-The verified graph is registered on chain and public: a fresh node finds it on chain, with no join
-step and no approval. One subscription, shared memory included, brings both tiers; the catch-up asks
-the publisher's node (`graph_peer_id`) first.
+The verified graph is registered on chain and public: no join step, no approval. Blackbox dials the
+publisher's node (`graph_peer_id`) before it subscribes and keeps that link, because community reports
+reach a node over it. One subscription, shared memory included, brings both tiers. A node that reaches
+the network only through relays does not get the graph's definition from the core nodes; until it has
+it, the node can read but every share is refused, so Blackbox subscribes again with a forced catch-up,
+which brings the definition from the publisher's node.
 
 ```mermaid
 flowchart LR
-    I[Installer or config:<br/>context_graph_id] --> S[Subscribe with shared memory]
+    I[Installer or config:<br/>context_graph_id + graph_peer_id] --> C[Dial the publisher's node<br/>and keep the link]
+    C --> S[Subscribe with shared memory]
     S --> R[Catch-up replays the graph:<br/>Verified Memory and shared memory]
     R --> D[Verified and community tiers live]
+    R -. "no definition yet (relay-only node)" .-> F[Subscribe again<br/>with a forced catch-up]
+    F --> D
 ```
 
 A node set up by an older release followed only the graph's Verified Memory; Blackbox adds the shared
@@ -1227,7 +1233,7 @@ environment override, for example `BLACKBOX_MODE` or `BLACKBOX_REPORT`.
 | `dkg_url` | `http://127.0.0.1:9320` | Blackbox-managed local DKG node |
 | `dkg_home` | `<agent-blackbox>/.dkg` | isolated DKG node config, token, pid and cache |
 | `context_graph_id` | `0x37b1Fdfd…/agent-blackbox-vm` | the threat graph: verified rules in its Verified Memory, community reports in its shared memory |
-| `graph_peer_id` | bundled publisher peer | authoritative source for the verified graph |
+| `graph_peer_id` | bundled publisher peer | the publisher's node: dialled before the subscription and kept connected; community reports reach the node over that link, and the catch-up asks it first |
 | `report` | `true` | share privacy-safe reports into the graph's shared memory (on by default; `blackbox report --disable-sharing` turns it off) |
 | `report_min_severity` | `high` | lowest severity a built-in discovery candidate must reach to be flagged or shared |
 | `daily_report_limit` | `100` | cap on outbound reports per day; never "no cap" |

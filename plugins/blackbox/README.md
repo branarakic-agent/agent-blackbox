@@ -461,6 +461,7 @@ accept a `BLACKBOX_*` environment variable, such as `BLACKBOX_MODE`.
 | `shields.trader` | off | Trader Shield (see above) |
 | `osv_lookup` | `true` | look packages up on OSV.dev |
 | `context_graph_id` | `0x37b1Fdfd…/agent-blackbox-vm` | the threat graph: verified rules in its Verified Memory, community reports in its shared memory |
+| `graph_peer_id` | the publisher's node | dialled before the subscription and kept connected: community reports reach your node over that link |
 | `community_poll_interval` | `20` | seconds between community pulses (0 off) |
 | `community_keepalive_epoch_days` | `10` | how often your own reports are re-published (0 off) |
 | `community_shadow` | `false` | compute stages, enforce only monitor |
@@ -590,7 +591,7 @@ blackbox sync --wait --timeout 180
 | Symptom | What to do |
 |---|---|
 | No community reports arrive, or the Community panel stays empty | run `blackbox sync --wait`. Your node needs the verified graph's shared memory, where the reports live; a node set up by an older release followed only Verified Memory, and Blackbox adds the shared memory on its own |
-| `blackbox report --status` shows a refused share | nothing: the retry queue sends it again with backoff. A fresh node can be refused for a few minutes while it joins the graph |
+| `blackbox report --status` shows a refused share | nothing: the retry queue sends it again with backoff. A fresh node can be refused for a few minutes while it joins the graph; a node that reaches the network only through relays is refused until Blackbox has fetched the graph's definition from the publisher's node |
 | `blackbox report --status` says a report "moved to the verified graph" | nothing: a report from the retired community graph was signed again and shared in the one graph |
 | The log says `community_graph_id is ignored` (or `community_graph_peer_id`) | the setting belonged to the retired community graph; remove it from `config.yaml` or the environment. Nothing else is needed |
 
