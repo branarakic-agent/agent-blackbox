@@ -495,11 +495,7 @@ def test_a_working_sqlite_module_is_not_rebuilt(tmp_path):
 
 
 def _docker_available(tmp_path: Path, *, docker: str | None, os_name: str = "linux") -> int:
-    """blackbox_docker_available with a stub docker: None = not installed, "up" = running, "down" = stopped.
-
-    PATH holds only the stub's directory: the function needs nothing else (``command -v`` and ``[``
-    are builtins, the stub names its shell by absolute path), and a host that has Docker of its own,
-    like the CI runner, must not stand in for "not installed"."""
+    """blackbox_docker_available with a stub docker: None = not installed, "up" = running, "down" = stopped."""
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir(parents=True, exist_ok=True)
     if docker is not None:
