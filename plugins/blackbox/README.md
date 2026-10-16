@@ -273,9 +273,7 @@ your machine.
 The verified rules are reviewed intelligence. The community reports are their
 scouting network: every node contributes to them and learns from them, so
 threats surface before a reviewer has seen them. They live in the verified
-graph's shared memory. The separate community graph is retired: the reports
-your node shared there and still keeps alive move over on their own, signed
-again for the one graph, at most 100 a day.
+graph's shared memory; there is no separate community graph.
 
 ### What a report carries
 
@@ -310,8 +308,8 @@ the machine at all.
   two of its three curators must sign. A rejection or revocation always gets
   through.
 - The **community authority**, the community's own curators with flag-only
-  powers, is dormant: it may speak only in a graph of its own, and there is
-  one graph now.
+  powers, is not in use: there are no community curators for now, though some
+  may be added later.
 
 ### How a community threat grows
 
@@ -593,8 +591,7 @@ blackbox sync --wait --timeout 180
 |---|---|
 | No community reports arrive, or the Community panel stays empty | run `blackbox sync --wait`. Your node needs the verified graph's shared memory, where the reports live; a node set up by an older release followed only Verified Memory, and Blackbox adds the shared memory on its own |
 | `blackbox report --status` shows a refused share | nothing: the retry queue sends it again with backoff. A fresh node can be refused for a few minutes while it joins the graph; a node that reaches the network only through relays is refused until Blackbox has fetched the graph's definition from the publisher's node |
-| `blackbox report --status` says a report "moved to the verified graph" | nothing: a report from the retired community graph was signed again and shared in the one graph |
-| The log says `community_graph_id is ignored` (or `community_graph_peer_id`) | the setting belonged to the retired community graph; remove it from `config.yaml` or the environment. Nothing else is needed |
+| The log says `community_graph_id is ignored` (or `community_graph_peer_id`) | the setting belonged to the separate community graph, which is gone; remove it from `config.yaml` or the environment. Nothing else is needed |
 
 ## About
 

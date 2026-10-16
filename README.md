@@ -271,9 +271,7 @@ the moment it syncs, and a community report warns every node within about half a
 
 The verified rules are reviewed intelligence. The community reports are their scouting network: any
 node contributes to them and learns from them, in the verified graph's shared memory, so threats
-surface before a reviewer has seen them. The separate community graph is retired: the reports a node
-shared there and still keeps alive move over on their own, signed again for the one graph, at most
-100 a day.
+surface before a reviewer has seen them. There is no separate community graph.
 
 ### What happens when an agent catches something
 
@@ -326,9 +324,9 @@ schema is never built. Secret, LLM-reviewer and custom-rule findings never leave
 
 A report only moves enforcement when someone accountable stands behind it. Blackbox knows two
 authorities. Each has its own root key and its own three curator keys (any two must sign), and
-neither can speak for the other. Under one graph only the **verified authority**, Umanitek's,
-speaks: the **community authority** may speak only in a graph of its own, so it is dormant and no
-reader trusts a community root.
+neither can speak for the other. Only the **verified authority**, Umanitek's, speaks today: the
+**community authority** is not in use, since there are no community curators for now, so no reader
+trusts a community root. Some may be added later.
 
 ```mermaid
 flowchart LR
@@ -351,10 +349,10 @@ flowchart LR
     P --> BLOCK
 ```
 
-| | Community authority (dormant) | Verified authority |
+| | Community authority (not in use) | Verified authority |
 |---|---|---|
-| Root key is pinned | per graph of its own; none under one graph | per network |
-| Its statements live in | a graph of its own | Verified Memory; its notices in shared memory |
+| Root key is pinned | none for now | per network |
+| Its statements live in | a graph of its own, once in use | Verified Memory; its notices in shared memory |
 | List and delist trusted reporters | yes, for at most 90 days per listing | yes |
 | Confirm, reject or defer a community threat | yes; a confirmation must cite signed evidence | yes |
 | Pause community intake | yes, at most 7 days | yes |
@@ -374,8 +372,8 @@ revocation or a correction; a retraction stops only the report. Publishing the r
 the rule is built but switched off until the DKG can carry it. The reporter terms (version 1.4) say
 all of this before anyone shares.
 
-**When both have spoken, the most restrictive word wins** (under one graph only the verified
-authority speaks)
+**When both have spoken, the most restrictive word wins** (today only the verified authority
+speaks)
 
 | Question | Rule |
 |---|---|
@@ -383,7 +381,7 @@ authority speaks)
 | What is the verdict on this threat? | a rejection or revocation beats a live deferral, which beats a confirmation; the verified authority wins a tie |
 | Is intake paused? | yes if either authority paused it |
 
-**The confirmed pool and the hand-off** (dormant with the community authority)
+**The confirmed pool and the hand-off** (not in use while there are no community curators)
 
 A threat is in the confirmed pool while a community confirmation with a signed evidence reference
 stands for it. The evidence is one of three things: a public advisory id, a registry's own action,
@@ -1251,7 +1249,7 @@ environment override, for example `BLACKBOX_MODE` or `BLACKBOX_REPORT`.
 | `protected_paths` | `[]` | your own files and folders: they block in block mode and never leave the machine |
 
 Full options, including the LLM reviewer, in the [plugin README](plugins/blackbox/README.md).
-`community_graph_id` and `community_graph_peer_id` are retired with the separate community graph. The
+`community_graph_id` and `community_graph_peer_id` are gone with the separate community graph. The
 installer removes them from `config.yaml`; if an older config or the `BLACKBOX_COMMUNITY_GRAPH_ID` and
 `BLACKBOX_COMMUNITY_GRAPH_PEER_ID` variables still set them, Blackbox ignores them and says so once in
 its log.

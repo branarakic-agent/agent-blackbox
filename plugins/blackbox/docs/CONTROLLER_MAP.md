@@ -1,6 +1,6 @@
 # Controller map — Agent Blackbox community reports
 
-Version: 1.2 (draft for counsel review, 2026-10-16 — one context graph: reports in the verified graph's shared memory, promotions that name them in its Verified Memory, the community authority dormant; v1.1, 2026-10-03, added the community authority)
+Version: 1.2 (draft for counsel review, 2026-10-16 — one context graph: reports in the verified graph's shared memory, promotions that name them in its Verified Memory, the community authority not in use; v1.1, 2026-10-03, added the community authority)
 
 ## 1. The parties
 
@@ -8,7 +8,7 @@ Version: 1.2 (draft for counsel review, 2026-10-16 — one context graph: report
 | --- | --- | --- | --- |
 | **Node operator** (whoever runs an Agent Blackbox node with `report: true`) | controller for the statements its node publishes | whether to share at all (consent), what to report manually, when to retract, withdraw or erase | the reporter key, the share ledger, the keep-alive memory, local audit logs |
 | **Umanitek** (operator of the curator node and publisher of the verified graph) | controller for the curator's processing, the publication of promotions in Verified Memory included | which threats are confirmed, rejected, attested, promoted or revoked; which report a promotion is built from and names; who is a counted author; the kill list; the reporter terms | the curator-private reputation ledger (salted), canaries, proposals and consent records of the two-key flow |
-| **Community curators' operator** (runs the community curator nodes and holds the community root key) — NAME TO BE RECORDED before the first reporter outside the pilot (decision 15, open). DORMANT under one graph: the community authority may speak only in a graph of its own, so no reader trusts its statements | controller for the community authority's processing, while it is active | who is a trusted reporter among the community reports; which community threats are confirmed, rejected, deferred; intake pauses; the automation policy its curator service runs under | the community curators' private reputation ledger (salted, index encrypted), their proposals and consent records, the statements they keep alive, the policy acceptance |
+| **Community curators' operator** (runs the community curator nodes and holds the community root key) — NAME TO BE RECORDED before the first reporter outside the pilot (decision 15, open). NOT IN USE: there are no community curators for now, and no reader trusts a community root; some may be added later | controller for the community authority's processing, once it is in use | who is a trusted reporter among the community reports; which community threats are confirmed, rejected, deferred; intake pauses; the automation policy its curator service runs under | the community curators' private reputation ledger (salted, index encrypted), their proposals and consent records, the statements they keep alive, the policy acceptance |
 | **Every other node** (readers) | independent controller of its own replica | its own retention setting (TTL) for shared memory, its own local overrides | its replica of the graph: shared memory and Verified Memory |
 | **Curator node hosting provider** | processor for Umanitek | nothing | the curator node's disk |
 | **Community curator node hosting provider** | processor for the community curators' operator | nothing | the community curator nodes' disks |
@@ -17,8 +17,8 @@ Version: 1.2 (draft for counsel review, 2026-10-16 — one context graph: report
 
 Umanitek and the node operators jointly determine the purpose (threat early
 warning) and the means (the statement schema, the graph, the stages) of the
-community reports; the community curators' operator joins them while its
-authority is active (dormant under one graph). Each curator group decides
+community reports; the community curators' operator would join them once its
+authority is in use (not in use for now). Each curator group decides
 alone about its own reputation ledger and its own verdicts; neither can make
 a statement in the other's name (separate root keys). Umanitek alone decides
 which reports it promotes; each promotion is a verified rule it publishes in
@@ -49,7 +49,7 @@ essence of the arrangement (GDPR art. 26):
   providers named in the current deployment record; updated when they change).
 - Export bundles of the confirmed pool: wherever their receiver keeps them;
   they hold only statements already public in the graph's shared memory
-  (dormant with the community authority).
+  (not in use while there are no community curators).
 - Operator-private files: on the operator's machine.
 
 ## 4. Cross-border transfers

@@ -6,14 +6,9 @@ Version: 1.4 (draft for counsel review, 2026-10-16)
 
 - ONE GRAPH. Your statements now go to the SHARED MEMORY of the verified
   threat graph (`0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox-vm`,
-  registered on chain), in its sub-graph `reports`. The separate community
-  graph is retired. Every node that follows the verified graph reads your
+  registered on chain), in its sub-graph `reports`, not to a separate
+  community graph. Every node that follows the verified graph reads your
   statements (sections 1 and 4).
-- YOUR EARLIER REPORTS MOVE. The reports your node shared in the community
-  graph and still keeps alive are shared once more, in the verified graph,
-  signed again for it by your node (at most 100 a day). From then on they can
-  be promoted like any other report. A report you retracted does not move,
-  and nothing moves while sharing is off.
 - PROMOTION NAMES YOUR REPORT. Umanitek's curators review reports and
   promote the threats they choose. Each promotion is a verified rule built
   from one report, signed by two curators and published to the graph's
@@ -33,9 +28,10 @@ Version: 1.4 (draft for counsel review, 2026-10-16)
 - The curators can also publish the report itself, exactly as you signed
   it, next to the rule. That step is built but switched off; switched on, it
   would make the whole report permanent, sighting fields included (section 4).
-- THE COMMUNITY CURATORS ARE DORMANT. They may speak only in a graph of their
-  own, and there is one graph now, so no reader acts on their statements.
-  Umanitek's curators are the only ones who rule on reports (section 4).
+- NO COMMUNITY CURATORS FOR NOW. The community curators of version 1.1 are
+  not in use: there are none, and no reader acts on community-curator
+  statements. Some may be added later. Umanitek's curators are the only ones
+  who rule on reports (section 4).
 
 ## What changed in version 1.3
 
@@ -148,11 +144,11 @@ promoted from your report, with a revocation or a correction (section 4).
   list you as a trusted reporter, confirm, reject or defer a community
   threat, pause intake for up to 7 days, promote a threat into Verified
   Memory (below), revoke a verified rule, and publish the kill list.
-- The COMMUNITY curators (named in the controller map) are DORMANT while
-  there is one graph: they may speak only in a graph of their own, so no
-  reader acts on their statements. When active, they may list trusted
-  reporters, confirm, reject or defer a community threat, and pause intake
-  for up to 7 days; their statements can only make a threat FLAG,
+- The COMMUNITY curators (named in the controller map) are NOT IN USE: there
+  are none for now, and no reader acts on community-curator statements; some
+  may be added later. Once in use, they may list trusted reporters, confirm,
+  reject or defer a community threat, and pause intake for up to 7 days;
+  their statements can only make a threat FLAG,
   never block.
 - PROMOTION. Umanitek's curators promote a threat with a verified rule built
   from one report they select, by default the earliest shared for it. Two
@@ -190,7 +186,7 @@ promoted from your report, with a revocation or a correction (section 4).
   graph's owner as one file holding the signed statements behind them, your
   signed reports included, so the receiver can credit the original reporters.
   The file holds nothing that is not already public in the graph's shared
-  memory. This hand-off is dormant with the community curators.
+  memory. This hand-off is not in use while there are no community curators.
 
 ## 5. Your rights and the tools for them
 
