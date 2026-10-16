@@ -484,7 +484,11 @@ def test_a_working_sqlite_module_is_not_rebuilt(tmp_path):
 
 
 def _docker_available(tmp_path: Path, *, docker: str | None, os_name: str = "linux") -> int:
-    """blackbox_docker_available with a stub docker: None = not installed, "up" = running, "down" = stopped."""
+    """blackbox_docker_available with a stub docker: None = not installed, "up" = running, "down" = stopped.
+
+    PATH holds only the stub's directory: the function needs nothing else (``command -v`` and ``[``
+    are builtins, the stub names its shell by absolute path), and a host that has Docker of its own,
+    like the CI runner, must not stand in for "not installed"."""
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir(parents=True, exist_ok=True)
     if docker is not None:
@@ -497,7 +501,7 @@ blackbox_docker_available() {{
 }}
 OS={os_name}
 HOME={shlex.quote(str(tmp_path))}
-PATH={shlex.quote(str(fake_bin))}:/usr/bin:/bin
+PATH={shlex.quote(str(fake_bin))}
 blackbox_docker_available
 """
     return subprocess.run(["bash", "-c", script], capture_output=True, text=True, check=False).returncode
