@@ -1,6 +1,6 @@
 # Data Protection Impact Assessment — Agent Blackbox community reports
 
-Version: 1.6 (draft for counsel review, 2026-10-16; v1.6 records the move to one context graph: reports in the verified graph's shared memory, and a promoted report published permanently to Verified Memory with a public link from the verified rule to it — project lead decision; the community authority is dormant under one graph; v1.5 adds the threat-profile sighting fields and the site of a verified injection; v1.4 records the switch to sharing ON by default with an opt-out — founder decision; v1.3 adds the community authority — Community Curation C11; v1.2 corrected §2/§5 after review round 5 — KI-221/223/224, erasure semantics KI-220). Engineering assessment,
+Version: 1.6 (draft for counsel review, 2026-10-16; v1.6 records the move to one context graph: reports in the verified graph's shared memory, and a promotion published permanently to Verified Memory that names its report and reporter — project lead decision; the community authority is dormant under one graph; v1.5 adds the threat-profile sighting fields and the site of a verified injection; v1.4 records the switch to sharing ON by default with an opt-out — founder decision; v1.3 adds the community authority — Community Curation C11; v1.2 corrected §2/§5 after review round 5 — KI-221/223/224, erasure semantics KI-220). Engineering assessment,
 not legal advice; the launching party still needs counsel for its market.
 
 ## 1. The processing
@@ -12,14 +12,15 @@ DKG: Umanitek's verified threat graph, registered on chain, sub-graph
 read them, keep a trusted-reporter list and verdicts, and may promote threats
 into the verified tier that every node enforces. The COMMUNITY curators (v1.3)
 are dormant under one graph: their authority may speak only in a graph of its
-own, so no reader trusts a community root (v1.6). Promotion publishes
-the selected report itself, as its reporter signed it, to the graph's
-Verified Memory, next to the curators' two-signature promotion statement that
-points to it. Every node verifies signatures and computes stages itself.
-No new kind of personal data is collected in v1.6; what changes is where the
-statements live, and that a promoted report, with its reporter's
-pseudonymous identity, is published permanently and linked in public to the
-verified rule it led to. Purpose: early warning about malicious packages, skills, MCP
+own, so no reader trusts a community root (v1.6). A promotion is a
+verified rule the curator builds from one report and publishes, with two
+curator signatures, to the graph's Verified Memory; it names the report: its
+subject (which carries the reporter's agent address), the digest of its
+signed content and the reporter's public key. Publishing the report itself
+beside the rule is built but switched off. Every node verifies signatures and
+computes stages itself. No new kind of personal data is collected in v1.6;
+what changes is where the statements live, and that a promotion names its
+report and the reporter's pseudonymous identity, in public and permanently. Purpose: early warning about malicious packages, skills, MCP
 servers, prompt-injection patterns and indicators of compromise met by AI
 agents, so other agents are protected sooner.
 
@@ -27,13 +28,13 @@ agents, so other agents are protected sooner.
 
 | Data | Purpose | Where it lives | Retention |
 | --- | --- | --- | --- |
-| Reporter address (the node wallet's DKG agent address) and reporter public key | identity binding: every statement is signed; readers count distinct reporters | every replica of the graph's shared memory; trusted-reporter listings; every promoted report in Verified Memory (v1.6) | per replica's own expiry (30 d default; a replica may disable expiry → unbounded); verified listings ≤ 12 months, community listings ≤ 90 days, both renewable; each curator node re-publishes only its CURRENT statements; in a promoted report: PERMANENT |
+| Reporter address (the node wallet's DKG agent address) and reporter public key | identity binding: every statement is signed; readers count distinct reporters | every replica of the graph's shared memory; trusted-reporter listings; every promotion in Verified Memory that names the reporter's report (v1.6) | per replica's own expiry (30 d default; a replica may disable expiry → unbounded); verified listings ≤ 12 months, community listings ≤ 90 days, both renewable; each curator node re-publishes only its CURRENT statements; in a promotion: PERMANENT |
 | Trusted-reporter listing (listed yes/no, class, partner organisation, expiry day) | which reporters' reports count | as above | as above; a delisting is in force at most 12 months |
 | Reader trust store (`community_trust.json`: the curator statements and key manifests this node verified, listings included) | keep working when the graph cannot be read | every reader's own machine | current statements only, nothing older than 500 days; pruned on every read |
 | Export bundle of the confirmed pool (signed confirmations, the signed reports behind them, listings of those reporters) | hand-off to the verified graph's owner | wherever the receiver keeps the file | the receiver's own retention; holds nothing not already public; dormant with the community authority (v1.6) |
-| Threat statements (identifier, closed metadata, day) signed by the reporter | the product's purpose | every replica of the graph's shared memory | as above; readers keep a counted threat ≤ 90 d past expiry locally; PERMANENT once promoted (next row) |
-| Promoted report (v1.6): one reporter's signed statement, unchanged — identifier, closed metadata, day, sighting fields, reporter address and public key, signature; one report per promotion, by default the earliest; package (malware), indicator, skill and file-access reports only, never an injection report | the evidence behind a verified rule: every reader can check the report it came from | the graph's Verified Memory, on every node's replica | PERMANENT: Verified Memory cannot remove or change it; a retraction or a revocation stops it counting |
-| Promotion statement (v1.6): two curator signatures over the promotion, pointing to the promoted report | which report a verified rule came from, readable by anyone | Verified Memory, beside the report | PERMANENT, as above |
+| Threat statements (identifier, closed metadata, day) signed by the reporter | the product's purpose | every replica of the graph's shared memory | as above; readers keep a counted threat ≤ 90 d past expiry locally; what a promotion names of it is PERMANENT (next rows) |
+| Promotion (v1.6): the curators' verified rule built from one report — the threat's identifier and fields, the curators' severity, the two-key envelope — and what it names of the report: its subject (which carries the reporter's agent address), the digest of its signed content, the reporter's public key; one report per promotion, by default the earliest; package (malware), indicator, skill and file-access reports only, never an injection report | the evidence behind a verified rule: every reader can see which report it came from and check a copy of it | the graph's Verified Memory, on every node's replica | PERMANENT: Verified Memory cannot remove or change it; the curators' revocation stops it counting, the reporter's retraction only the report |
+| Promoted report as itself (v1.6, built but SWITCHED OFF until the DKG carries seals and share markers for sub-graph shares): the reporter's signed statement, unchanged, sighting fields included, beside a statement that points at it | the report a verified rule came from, readable by anyone | Verified Memory; each such publish recorded in the curator node's `publish_ledger.jsonl` | PERMANENT once switched on |
 | Weekly sighting digest (verified threats met, coarse buckets) | frequency signal | every replica | as above |
 | Sighting fields on each statement, closed words only (v1.5): host tool (own tools → `mcp-tool`/`other`), agent action, blocked/flagged, match method, Blackbox version, verified rule link, goal, resource CLASS at risk, MITRE technique; plus a record digest and the signer key beside the signature | reviewers can understand each threat without the operator's content | every replica | as above |
 | Site of a verified prompt injection (registrable domain only, never allowlisted or user-content platforms), as its own statement (v1.5) | other agents flag the site | every replica | as above |
@@ -44,7 +45,7 @@ agents, so other agents are protected sooner.
 | Curator signing log (`signing_log.jsonl`: for each signature this node's keys made — the statement kind, the digest of the signed bytes, the signing key's public key, the time; never the statement's text, a prompt or a command) | detecting a curator key used somewhere else: statements published under the key are compared with this log | the curator node only (owner-only file) | kept as the record of signatures made under the curator key; names no reporter |
 | Curator service state (`self_test.json`: the last self-test result over synthetic fixtures — day, matched, failures; `undelivered.json`: ids of this node's proposals no other curator has received yet, with the beat count and last attempt time) | suspending a curator whose verdict rules fail; alarming a halted quorum | the curator node only | current state only: overwritten each run; an entry is removed once its proposal is delivered or published; names no reporter |
 | Canaries (planted identifiers) | detecting bad-faith reporters | the curator node only | curator's discretion |
-| Provenance map (`provenance.jsonl` in the curate home: the random ids an earlier promotion carried → the report subjects behind them) | crediting reporters without a public link, before v1.6 | the curator node only (owner-only file) | no longer written (v1.6: a promotion points at its report in public); a file an earlier build wrote stays until the curator deletes it (§7) |
+| Provenance map (`provenance.jsonl` in the curate home: the random ids an earlier promotion carried → the report subjects behind them) | crediting reporters without a public link, before v1.6 | the curator node only (owner-only file) | no longer written (v1.6: a promotion names its report in public); a file an earlier build wrote stays until the curator deletes it (§7) |
 | Local audit logs on an operator's machine | the operator's own visibility | the operator's machine, redacted at capture | the operator's log rotation |
 | Private audit record (identifier, severity, REDACTED evidence text ≤ 1200 chars, exact time) | the operator's own forensic trail | the operator's OWN DKG node's private working memory, never shared; written only when the node is on the same machine (a remote `dkg_url` disables it, KI-223) | the node's working-memory retention |
 | Weekly sighting tally (verified-threat identifiers met, per ISO week) | source of the weekly digest | the operator's machine only | 8 weeks; erased with the identity (KI-221) |
@@ -75,17 +76,18 @@ never-shared source list; tested.
 - Promotion (v1.6, project lead decision 2026-10-16) relies on the same
   legitimate interest: a verified rule whose source report every reader can
   check. The operator is told before sharing (reporter terms v1.4, §4) and
-  can turn sharing off at any time; a report already promoted stays. COUNSEL
-  REVIEW REQUIRED: erasure cannot reach a promoted report (§5), and the link
-  from the verified rule to the report is public.
+  can turn sharing off at any time; a promotion already published stays.
+  COUNSEL REVIEW REQUIRED: erasure cannot reach a promotion (§5), and the
+  link from the verified rule to the report and its reporter is public.
 
 ## 4. Risks and mitigations
 
 | Risk | Mitigation |
 | --- | --- |
 | Immutable statements cannot be deleted from a replicated graph | The terms say so before consent; retraction stops counting on every current reader; nothing identifying beyond the reporter address is ever in a statement |
-| A promoted report is permanent: Verified Memory cannot remove or change it, and identity erasure cannot reach it (v1.6; the project lead accepted this) | Only a report the curators select is published, and it holds nothing its reporter had not already shared in public: closed fields, the day, a pseudonymous address and key; the terms (v1.4) say so before sharing, and an opt-out stops every later share; a retraction or a revocation stops it counting on every reader. Counsel to confirm (§7) |
-| Anyone can see which report a verified rule came from: the promotion statement points to the report, so a reporter address is linked, in public and for good, to a threat its agents met (before, random ids kept that link curator-private; the project lead accepted this) | The identity is pseudonymous: a wallet address of Blackbox's own node and a public key, with no mapping to persons anywhere in the product; one report per promotion, so the threat's other reporters are not named and their reports expire as before; the report carries closed vocabularies only, day-rounded, never a count, a path or content; the terms say so before sharing; the operator can turn sharing off. Counsel to confirm (§7) |
+| A promotion is permanent: Verified Memory cannot remove or change it or the reporter address and key it names, and identity erasure cannot reach it (v1.6; the project lead accepted this) | Only reports the curators select are promoted, and a promotion holds nothing that was not already public in shared memory: the threat's fields, the report's subject, digest and reporter key, never the report's sighting fields while publishing the report itself stays off; the terms (v1.4) say so before sharing, and an opt-out stops every later share; the curators' revocation stops it counting on every reader, and a reporter can ask Umanitek for one. Counsel to confirm (§7) |
+| Publishing the report itself (built, switched off) would make the whole report permanent, sighting fields included | Off until the DKG carries seals and share markers for sub-graph shares; the terms (v1.4) already say it may come. Counsel to decide whether switching it on needs a new terms version first (§7) |
+| Anyone can see which report a verified rule came from: the promotion names the report, so a reporter address is linked, in public and for good, to a threat its agents met (before, random ids kept that link curator-private; the project lead accepted this) | The identity is pseudonymous: a wallet address of Blackbox's own node and a public key, with no mapping to persons anywhere in the product; one report per promotion, so the threat's other reporters are not named and their reports expire as before; the report carries closed vocabularies only, day-rounded, never a count, a path or content; the terms say so before sharing; the operator can turn sharing off. Counsel to confirm (§7) |
 | Reports shared before v1.6 move into the one graph: each node signs the reports it still keeps alive again for the verified graph and shares them there once, so a report shared under terms v1.3 becomes eligible for promotion | Only the node's own live reports move, under its own key, at most 100 a day; a retracted report never moves; with sharing off nothing moves; the terms' "What changed" section names the move. Counsel to confirm (§7) |
 | Author linkability: a reporter's dependency reports reveal which packages its agents install | Day-rounded timestamps; automatic sightings only for VERIFIED-tier matches; vulnerability findings never leave; the operator may run a dedicated reporter identity and erase it |
 | The weekly digest is a week-level list of verified threats per address | Coarse buckets; verified threats only; the digest is one statement per week; stops with every other share after an opt-out |
@@ -107,8 +109,8 @@ never-shared source list; tested.
 | Right | Operation |
 | --- | --- |
 | Access / export | `blackbox report --export FILE` (key backup, ledger, consent record, keep-alive memory, retry queue, sighting tally — machine-readable JSON, KI-224) |
-| Rectification | `--retract`, `--false-positive`; a retraction also stops a promoted report counting, which stays published (v1.6) |
-| Erasure | `--erase-identity --confirm` (signing key, ledger, keep-alive memory, retry queue, consent record, sighting tally); on request, each curator group runs `blackbox curate graduate --erase KEY` (salt deletion, and its statements about the reporter are no longer kept alive). NOTE (KI-220): erasure rotates the SIGNING key; the reporter address in every statement is the node's wallet address, which this command does not change — a new reporter identity in full needs a new node wallet (decision pending). NOTE (v1.6): no operation can erase a promoted report; it keeps the key and address it was signed with |
+| Rectification | `--retract`, `--false-positive`; a retraction stops the report counting, not a promotion built from it: that takes the curators' revocation, which the reporter can ask Umanitek for (v1.6) |
+| Erasure | `--erase-identity --confirm` (signing key, ledger, keep-alive memory, retry queue, consent record, sighting tally); on request, each curator group runs `blackbox curate graduate --erase KEY` (salt deletion, and its statements about the reporter are no longer kept alive). NOTE (KI-220): erasure rotates the SIGNING key; the reporter address in every statement is the node's wallet address, which this command does not change — a new reporter identity in full needs a new node wallet (decision pending). NOTE (v1.6): no operation can erase a promotion; it keeps naming the key and address the report was signed with |
 | Restriction / objection | `--withdraw-consent` (opt-out, kept across upgrades and erasure); `--disable-sharing` / the dashboard toggle (`report: false`) |
 | Portability | the export file restores the identity on another machine (`--restore-key`) |
 
@@ -129,9 +131,11 @@ the controller map).
 - Confirm the joint-controller analysis (controller map §2).
 - Confirm CC0 as the licence for statements.
 - Confirm the v1.5 sighting fields and the shared site of a verified injection under the legitimate-interest basis, with sharing on by default.
-- Confirm the v1.6 promotion under the legitimate-interest basis: a promoted report, with its reporter's pseudonymous identity, is permanent in Verified Memory, out of reach of erasure, and linked in public to its verified rule.
+- Confirm the v1.6 promotion under the legitimate-interest basis: a promotion names its report and the reporter's pseudonymous identity permanently and in public in Verified Memory, out of reach of erasure.
+- Decide whether switching on the publication of reports as themselves (built, off) needs a new terms version first.
+- Confirm that a reporter's retraction does not reach a promotion built from the report (only the curators' revocation does), or decide that a retraction asks the curators for a review.
 - Confirm that reports shared under terms v1.3 may move into the one graph, and so become eligible for promotion, while sharing stays on by default and a terms change does not pause it.
-- Check the privacy policy's retention for the curated public graph (at most 36 months, unless needed for the graph's integrity) against permanent promoted reports.
+- Check the privacy policy's retention for the curated public graph (at most 36 months, unless needed for the graph's integrity) against permanent promotions.
 - Decide whether curator nodes delete the provenance map an earlier build wrote (§2).
 - Confirm the 24-month ledger retention and the 90-day reader persistence.
 - Decide whether the counted-author list needs a published privacy notice of its own.
@@ -142,8 +146,8 @@ the controller map).
 | --- | --- | --- |
 | Only necessary fields, each mapped to a purpose | done | §2: no new kind of personal data; listings carry key, address, class, organisation, expiry |
 | Consent opt-in, unbundled, default off; record stored; withdrawal works | departed | §3: on by default with notice and a one-step opt-out; the opt-out record is stored and honoured by both runtimes; a node with `report: true` and an opt-out on record shows an ACTION item in `blackbox status` and the dashboard; counsel review pending |
-| Access, export, correction, deletion, opt-out are real, tested operations | done | §5; the curator-side erasure removes the ledger entry and ends keep-alive of statements about the reporter; deletion cannot reach a promoted report (next row) |
-| Retention set; automatic deletion | departed | §2: replica expiry, 90-day community listings, 24-month ledger, 500-day trust store, current-only keep-alive; a promoted report is permanent in Verified Memory (v1.6, project lead decision); counsel review pending (§7) |
+| Access, export, correction, deletion, opt-out are real, tested operations | done | §5; the curator-side erasure removes the ledger entry and ends keep-alive of statements about the reporter; deletion cannot reach a promotion (next row) |
+| Retention set; automatic deletion | departed | §2: replica expiry, 90-day community listings, 24-month ledger, 500-day trust store, current-only keep-alive; a promotion is permanent in Verified Memory (v1.6, project lead decision); counsel review pending (§7) |
 | Encryption at rest for the sensitive store; secrets kept out of statements | done | the ledger index is encrypted (AES-256-GCM); keys and tokens never leave their owner-only files |
 | No personal data in logs | done | statements carry no free text; display strings are sanitized; the consent ledger records codes and summaries, never report content |
 | Sensitive and children's data | not applicable | the schema has no field for it |

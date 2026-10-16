@@ -14,20 +14,25 @@ Version: 1.4 (draft for counsel review, 2026-10-16)
   signed again for it by your node (at most 100 a day). From then on they can
   be promoted like any other report. A report you retracted does not move,
   and nothing moves while sharing is off.
-- PROMOTION PUBLISHES A REPORT. Umanitek's curators review reports and
-  promote the threats they choose. Each promotion publishes one report,
-  exactly as its reporter signed it, to the graph's VERIFIED MEMORY; it can
-  be yours. Their promotion statement, signed by two curators, is published
-  next to it and points to it (section 4).
-- A PROMOTED REPORT IS PERMANENT. Nobody can remove or change it: not you,
-  not Umanitek, not anyone. A retraction or a revocation still stops it
-  counting, but cannot remove it (sections 2 and 5).
+- PROMOTION NAMES YOUR REPORT. Umanitek's curators review reports and
+  promote the threats they choose. Each promotion is a verified rule built
+  from one report, signed by two curators and published to the graph's
+  VERIFIED MEMORY. It names the report it came from: the report's subject,
+  which carries the REPORTER ADDRESS, the digest of what the reporter signed,
+  and the reporter public key. The report can be yours (section 4).
+- A PROMOTION IS PERMANENT. Nobody can remove or change it: not you, not
+  Umanitek, not anyone. The curators' revocation stops it counting, but
+  cannot remove it; your retraction stops your report counting, not the
+  rule (sections 2 and 5).
 - THE LINK IS PUBLIC. Anyone can see which report a verified rule came from,
-  and so the reporter address and reporter public key in that report. Until
-  now a promotion carried random ids in place of the reports behind it, and
-  only Umanitek's curator could link them to you (section 4).
-- Erasing your identity cannot reach a promoted report: it keeps the key and
-  the address it was signed with (section 5).
+  and so the reporter address and reporter public key it names. Until now a
+  promotion carried random ids in place of the reports behind it, and only
+  Umanitek's curator could link them to you (section 4).
+- Erasing your identity cannot reach a promotion: it keeps naming the key
+  and the address your report was signed with (section 5).
+- The curators can also publish the report itself, exactly as you signed
+  it, next to the rule. That step is built but switched off; switched on, it
+  would make the whole report permanent, sighting fields included (section 4).
 - THE COMMUNITY CURATORS ARE DORMANT. They may speak only in a graph of their
   own, and there is one graph now, so no reader acts on their statements.
   Umanitek's curators are the only ones who rule on reports (section 4).
@@ -108,12 +113,12 @@ person's identity.
 
 You dedicate each statement you publish to the public domain under
 **CC0 1.0** (no rights reserved) so every node on the network may read,
-store, verify and act on it, and Umanitek's curators may publish it,
-unchanged, to Verified Memory (section 4). The graph is shared and
-replicated: a published statement cannot be deleted by you, by Umanitek or
-by anyone; you can RETRACT a report (`blackbox report --retract`) and every
-current reader stops counting it, but the record of the statement stays on
-the network. A report promoted to Verified Memory stays there permanently.
+store, verify and act on it, and Umanitek's curators may publish a verified
+rule built from it, which names it, in Verified Memory (section 4). The graph is
+shared and replicated: a published statement cannot be deleted by you, by
+Umanitek or by anyone; you can RETRACT a report (`blackbox report --retract`)
+and every current reader stops counting it, but the record of the statement
+stays on the network. A promotion stays in Verified Memory permanently.
 
 ## 3. What you promise
 
@@ -147,17 +152,23 @@ the network. A report promoted to Verified Memory stays there permanently.
   reporters, confirm, reject or defer a community threat, and pause intake
   for up to 7 days; their statements can only make a threat FLAG,
   never block.
-- PROMOTION. Umanitek's curators promote a threat by publishing one report
-  they select, by default the earliest shared for it, exactly as its
-  reporter signed it, to the graph's VERIFIED MEMORY. Their promotion
-  statement, signed by two curators, is published next to it and points to
-  it. Reports of malicious packages, indicators, skills and file access can
-  be promoted; an injection report cannot. A promoted report carries
-  everything your statement carries (section 1), your REPORTER ADDRESS,
-  reporter public key and signature included. It is PERMANENT: nobody can
-  remove or change it. Anyone can read it and see which verified rule it led
-  to. A retraction by you or a revocation by the curators stops it counting
-  on every reader; it stays readable.
+- PROMOTION. Umanitek's curators promote a threat with a verified rule
+  built from one report they select, by default the earliest shared for it.
+  Two curators sign it, and it is published to the graph's VERIFIED MEMORY.
+  The rule carries the threat's identifier and fields, and names the report
+  it came from: the report's subject, which carries your REPORTER ADDRESS,
+  the digest of what you signed, and your reporter public key. Reports of
+  malicious packages, indicators, skills and file access can be promoted; an
+  injection report cannot. A promotion is PERMANENT: nobody can remove or
+  change it. Anyone can read it and see which report and reporter it came
+  from. A revocation by the curators stops it counting on every reader; it
+  stays readable. Your retraction stops your report counting, not the rule:
+  to have a rule revoked, ask Umanitek (the contact is in the controller
+  map).
+- The curators can also publish the report itself, exactly as its reporter
+  signed it, next to the rule. That step is built but switched off until the
+  DKG can carry it. Switched on, the whole report would be permanent, your
+  sighting fields (section 1) and signature included.
 - Each group of curators may keep a PRIVATE reputation ledger about reporters
   on its own curator nodes: which of your reports were confirmed or rejected,
   keyed by a per-reporter random salt. Nothing from it is published. The index
@@ -189,9 +200,8 @@ the network. A report promoted to Verified Memory stays there permanently.
   Your next report is signed by a new key; your node's WALLET address, which
   every statement also carries, is not changed by this command. Each group of
   curators deletes its ledger salt on request (crypto-shredding) and stops
-  keeping your listing alive. Erasure cannot reach a report that was
-  promoted to Verified Memory: it stays there, with the reporter key and
-  address it was signed with.
+  keeping your listing alive. Erasure cannot reach a promotion: it keeps
+  naming the reporter key and address your report was signed with.
 - **Turn sharing off (opt out):** `blackbox report --withdraw-consent` (or
   `--disable-sharing`, or the dashboard toggle).
 - Requests that need a human: the contact points in the controller map

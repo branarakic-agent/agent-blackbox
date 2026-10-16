@@ -340,15 +340,15 @@ flowchart LR
         VR["Verified root key<br/>pinned per network"] --> VM["Verified key manifest<br/>3 curator keys, any 2 sign"]
         VM --> TL["Trusted-reporter list"]
         VM --> VRULE["Verified rules"]
-        VM --> P["Promotion statement"]
-        P -->|points to| PR["Promoted report<br/>as its reporter signed it"]
+        VM --> P["Promotions: verified rules<br/>built from one report each"]
     end
     VM -. "signs" .-> N
     Q -. "promote" .-> P
+    P -. "names the report and its reporter" .-> R
     N --> FLAG["FLAG on every reader"]
     TL --> FLAG
-    P --> VRULE
     VRULE --> BLOCK["BLOCK in block mode"]
+    P --> BLOCK
 ```
 
 | | Community authority (dormant) | Verified authority |
@@ -361,14 +361,16 @@ flowchart LR
 | Promote a report into Verified Memory, revoke a verified rule, publish the kill list | never | yes |
 | Strongest effect on a reader | FLAG | BLOCK in block mode |
 
-**Promoted reports.** Promotion publishes one report, by default the earliest shared for the threat,
-exactly as its reporter signed it, to Verified Memory, next to the promotion statement that points to
-it. Reports of malicious packages, indicators, skills and file access can be promoted; an injection
-report carries only a hash of its pattern and never is. A promoted report is permanent: nobody can
-remove or change it, and erasing an identity does not reach it. Anyone can see which report a
-verified rule came from, and so the reporter's DKG agent address and public key. A retraction or a
-revocation still stops it counting on every reader. The reporter terms (version 1.4) say this before
-anyone shares.
+**Promoted reports.** Two curator keys sign a promotion of one report, by default the earliest
+shared for the threat, and the curator publishes it to Verified Memory: a verified rule built from
+that report. The rule names the report it came from: its subject, which carries the reporter's DKG
+agent address, the digest of what the reporter signed, and the reporter's public key. Reports of
+malicious packages, indicators, skills and file access can be promoted; an injection report carries
+only a hash of its pattern and never is. A promotion is permanent: nobody can remove or change it,
+and erasing an identity does not reach it. Anyone can see which report a verified rule came from,
+and so its reporter. A revocation stops it counting on every reader; a retraction stops only the
+report. Publishing the report itself next to the rule is built but switched off until the DKG can
+carry it. The reporter terms (version 1.4) say all of this before anyone shares.
 
 **When both have spoken, the most restrictive word wins** (under one graph only the verified
 authority speaks)
@@ -512,7 +514,7 @@ modifies another DKG installation.
 
 | Layer of `context_graph_id` | DKG memory tier | Who writes | Power |
 |---|---|---|---|
-| Verified rules and promoted reports | Verified Memory | Umanitek's curator only | may block |
+| Verified rules, promotions of community reports among them | Verified Memory | Umanitek's curator only | may block |
 | Community reports, sub-graph `reports` | shared memory | every sharing node, signed | flags only |
 
 **Modules** (`plugins/blackbox/`, thirteen feature modules and one kernel)
@@ -1263,9 +1265,9 @@ and the controller map ship in `plugins/blackbox/docs/`.
 
 What erasure cannot do: statements already replicated by other nodes stay in their copies (a shared
 graph cannot delete); a retraction stops them counting. Erasure rotates your signing key; the node's
-wallet address, which every statement carries as the reporter, is unchanged. A report the curators
-promoted stays in Verified Memory for good, with the key and address it was signed with; a
-retraction stops it counting there too.
+wallet address, which every statement carries as the reporter, is unchanged. A promotion built from
+your report keeps naming your report, key and address in Verified Memory for good; your retraction
+stops your report counting, not the rule.
 
 | Never shared | Enforced by |
 |---|---|

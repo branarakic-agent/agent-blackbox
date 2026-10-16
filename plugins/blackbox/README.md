@@ -109,9 +109,10 @@ Read this before installing. Blackbox sends **no telemetry or usage data**.
     reports into the graph's shared memory: the threat's name, category and
     severity, and the day — never prompts, commands, file contents or secrets
     (see [what a report carries](#what-a-report-carries)). It also reads other
-    nodes' reports, which only ever flag and never block. A report Umanitek's
-    curators promote is published as you signed it to the graph's Verified
-    Memory, where it stays for good (see [promoted reports](#promoted-reports)).
+    nodes' reports, which only ever flag and never block. If Umanitek's
+    curators promote a threat from your report, the verified rule they
+    publish in the graph's Verified Memory names your report, reporter address
+    and key for good (see [promoted reports](#promoted-reports)).
     Turn sharing off with `blackbox report --disable-sharing`, the dashboard
     toggle, or `report: false` (`BLACKBOX_REPORT=0`).
   - Package installs are looked up on OSV.dev (`api.osv.dev`): the package name
@@ -264,7 +265,7 @@ your machine.
 
 | Layer | What it holds | Who writes it | How long it stays |
 |---|---|---|---|
-| *Verified Memory* | published, signed knowledge: the verified rules, and the reports the curators promoted | Umanitek's curator wallet only | for good |
+| *Verified Memory* | published, signed knowledge: the verified rules, promotions of community reports among them | Umanitek's curator wallet only | for good |
 | *Shared memory* | the community's signed reports, retractions and disputes, in the sub-graph `reports` | any node | until each node's copy expires (30 days by default); your node re-shares its own reports before then |
 
 ## Community reports
@@ -340,19 +341,22 @@ read keeps the last good state instead of wiping what the node knows.
 ### Promoted reports
 
 Umanitek's curators review the reports and promote the threats they choose.
-Promotion publishes one report, by default the earliest shared for the
-threat, exactly as its reporter signed it, to the graph's Verified Memory.
-The curators' promotion statement, signed by two of their three keys, is
-published next to it and points to it. From then on the threat is a verified
-rule. Reports of malicious packages, indicators, skills and file access can be
-promoted; an injection report carries only a hash of its pattern and never is.
+Two of their three keys sign a promotion of one report, by default the
+earliest shared for the threat, and the curator publishes it to the graph's
+Verified Memory: a verified rule built from that report. The rule names the
+report it came from: the report's subject, which carries the reporter's DKG
+agent address, the digest of what the reporter signed, and the reporter's
+public key. Reports of malicious packages, indicators, skills and file access
+can be promoted; an injection report carries only a hash of its pattern and
+never is. Publishing the report itself next to the rule is built but switched
+off until the DKG can carry it.
 
 | What follows | Why |
 |---|---|
-| A promoted report is permanent | Verified Memory cannot remove or change what was published, so neither Umanitek nor the reporter can |
-| Anyone can see which report a verified rule came from | the promotion statement points to the report, and the report names its reporter: a DKG agent address and a reporter public key |
-| A retraction or a revocation still works | it stops the promoted report counting on every reader, but cannot remove it |
-| Erasing your identity does not reach it | the report keeps the key and address it was signed with |
+| A promotion is permanent | Verified Memory cannot remove or change what was published, so neither Umanitek nor the reporter can |
+| Anyone can see which report a verified rule came from | the rule names the report, and with it the reporter's DKG agent address and public key |
+| A revocation still works | it stops the rule counting on every reader, but cannot remove it; a reporter's retraction stops only the report |
+| Erasing your identity does not reach it | the rule keeps naming the key and address the report was signed with |
 
 The reporter identity stays pseudonymous, as everywhere else in Blackbox. The
 reporter terms (version 1.4) say all of this before you share.
@@ -527,8 +531,9 @@ map ship in `plugins/blackbox/docs/`.
 
 What erasure cannot do: copies of statements other nodes already hold stay
 there (a shared graph cannot delete), but a retraction stops them counting. A
-report the curators promoted stays in Verified Memory for good, with the key
-and address it was signed with; a retraction stops it counting too.
+promotion built from your report keeps naming your report, key and address in
+Verified Memory for good; your retraction stops your report counting, not the
+rule.
 
 | Never shared | Why it cannot be |
 |---|---|
