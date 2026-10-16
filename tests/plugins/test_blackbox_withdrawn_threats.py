@@ -10,9 +10,10 @@ path for up to 90 days. Reductions always get through (LES-016).
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import timedelta
 
 import pytest
+from _clock import utc_today
 from _community_rows import GRAPH, NETWORK, Reporter
 from _machines import SWM, share_report
 from test_blackbox_curate_community import CFG, Curators, _listing
@@ -132,7 +133,7 @@ def test_a_threat_that_merely_expired_is_still_kept_locally(team):
 def test_a_rejection_gets_through_while_intake_is_paused(team):
     team.report(X), team.report(Y)
     team.compile()
-    until = (date.today() + timedelta(days=3)).isoformat()
+    until = (utc_today() + timedelta(days=3)).isoformat()
     team.two_key(Kind.PAUSE, "curator", {"until": until})
     team.two_key(Kind.REJECTION, X, {"reason": "benign"}, first=team.c, second=team.a)
     tier = team.compile()

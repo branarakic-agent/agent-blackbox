@@ -185,24 +185,35 @@ def test_no_step_after_hermes_reads_the_checkout_directly():
               and guard not in lines[index - 1]]   # the line under a non-empty check is safe
     allowed = ("REPO_DIR=", "${BLACKBOX_HELPER_DIR:-$REPO_DIR/scripts}", "${BLACKBOX_PLUGIN_DIR:-$REPO_DIR/plugins/blackbox}",
                "${BLACKBOX_PLUGIN_DIR:-$REPO_DIR}", '[ -n "$REPO_DIR" ]')
-    hermes_steps = "".join(_body(step) for step in ("resolve_repo", "install_python_env", "use_hermes_selected_venv",
-                                                    "ensure_web_extra", "minimal_python_env",
+    hermes_steps = "".join(_body(step) for step in ("resolve_repo", "blackbox_head_in_branch", "install_python_env",
+                                                    "use_hermes_selected_venv", "ensure_web_extra", "minimal_python_env",
                                                     "refresh_blackbox_plugin_copy", "reuse_existing_hermes_api_keys"))
+    # blackbox_head_in_branch is part of resolve_repo's update (KI-417): it may read the checkout
+    # only while resolve_repo stays its one caller.
+    callers = [line.strip() for line in lines if "blackbox_head_in_branch" in line and "()" not in line
+               and not line.lstrip().startswith("#")]
+    assert callers and all(line in _body("resolve_repo") for line in callers), callers
     stray = [line for line in direct if line not in hermes_steps and not any(token in line for token in allowed)]
     assert stray == []
 
 
-def test_setup_only_keeps_community_sharing_on_by_reading_consent_from_the_plugin_folder(tmp_path, monkeypatch):
+def test_setup_only_reads_the_operators_opt_in_from_the_plugin_folder(tmp_path, monkeypatch):
     """Stock Hermes has its own `plugins` package, so the config writer's consent check must load
     Blackbox from the plugin folder it is given. If it could not, it would answer "no consent" and
-    turn sharing OFF on every catalog install (found while building setup-only mode, 2026-10-14)."""
+    turn sharing OFF for every catalog operator who opted in (found while building setup-only mode,
+    2026-10-14). Sharing is opt-in (2026-10-16): no record reads as off, an acceptance as on."""
+    import json
     helper = INSTALL_SH.read_text(encoding="utf-8").split("def _consent_in_force(checkout):", 1)[1].split("\nif ", 1)[0]
     namespace: dict = {"sys": sys, "os": os}
     exec("def _consent_in_force(checkout):" + helper, namespace)
-    monkeypatch.setenv("BLACKBOX_HOME", str(tmp_path / "bb"))   # no sharing record: the default, sharing on
+    home = tmp_path / "bb"
+    monkeypatch.setenv("BLACKBOX_HOME", str(home))
     plugin_dir = Path(__file__).resolve().parents[1] / "plugins" / "blackbox"
 
-    assert namespace["_consent_in_force"](str(plugin_dir)) is True
+    assert namespace["_consent_in_force"](str(plugin_dir)) is False                 # no record: the default, off
+    home.mkdir()
+    (home / "sharing_consent.json").write_text(json.dumps({"accepted_at": "2026-10-16T00:00:00+00:00"}), encoding="utf-8")
+    assert namespace["_consent_in_force"](str(plugin_dir)) is True                  # the operator's opt-in is read
 
 
 def test_the_config_writer_is_given_the_plugin_folder_in_setup_only_mode():
@@ -495,6 +506,8 @@ def _docker_available(tmp_path: Path, *, docker: str | None, os_name: str = "lin
         stub = fake_bin / "docker"
         stub.write_text(f"#!/bin/sh\nexit {0 if docker == 'up' else 1}\n", encoding="utf-8")
         stub.chmod(0o755)
+    # PATH is the stub folder ALONE: the function needs only shell builtins and `docker`, and a host
+    # with a real, running Docker in /usr/bin (GitHub's Ubuntu runners) must not answer for the stub.
     script = f"""
 blackbox_docker_available() {{
 {_body("blackbox_docker_available")}

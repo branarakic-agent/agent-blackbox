@@ -2,6 +2,59 @@
   "id": "coinbase-wallet",
   "name": "Coinbase Wallet",
   "kind": "browser-extension",
-  "status": "planned",
-  "order": 120
+  "status": "supported",
+  "order": 120,
+  "verified": "2026-10-16",
+  "source": "Chrome Web Store install on Ubuntu 24.04, Chrome 155 (2026-10-16): the real extension wrote its storage under this id",
+  "stores": {
+    "chromium": [
+      "hnfanknocfeofbddgcijnmhnfnkdnaad"
+    ]
+  },
+  "logo": {
+    "file": "logo.svg",
+    "terms": "NOTICE.md",
+    "source": "https://raw.githubusercontent.com/coinbase/coinbase-wallet-sdk/master/assets/coinbase_wallet_logo_kit.zip (zip member: \"Coinbase Wallet Logos/Icon/coinbase_wallet_appicon.svg\", extracted unmodified)"
+  },
+  "availability": [
+    {
+      "store": "Chrome Web Store",
+      "browsers": [
+        "Chrome",
+        "Brave",
+        "Edge",
+        "Opera",
+        "Vivaldi",
+        "Arc"
+      ],
+      "state": "protected",
+      "url": "https://chromewebstore.google.com/detail/hnfanknocfeofbddgcijnmhnfnkdnaad",
+      "source": "https://help.coinbase.com/en/wallet/browser-extension/coinbase-wallet-extension"
+    },
+    {
+      "store": "Firefox Add-ons",
+      "browsers": [
+        "Firefox"
+      ],
+      "state": "not-offered",
+      "source": "https://help.coinbase.com/en/wallet/browser-extension/coinbase-wallet-extension",
+      "note": "Coinbase supports Chrome and Brave only"
+    },
+    {
+      "store": "Edge Add-ons",
+      "browsers": [
+        "Edge"
+      ],
+      "state": "not-offered",
+      "note": "Coinbase supports Chrome and Brave only"
+    },
+    {
+      "store": "Safari",
+      "browsers": [
+        "Safari"
+      ],
+      "state": "not-offered",
+      "note": "No desktop Safari extension from the publisher"
+    }
+  ]
 }

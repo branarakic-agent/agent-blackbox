@@ -2,6 +2,53 @@
   "id": "okx-wallet",
   "name": "OKX Wallet",
   "kind": "browser-extension",
-  "status": "planned",
-  "order": 140
+  "status": "supported",
+  "order": 140,
+  "verified": "2026-10-16",
+  "source": "Chrome Web Store install on Ubuntu 24.04, Chrome 155 (2026-10-16): the real extension wrote its storage under this id",
+  "stores": {
+    "chromium": [
+      "mcohilncbfahbmgdjkbpemcciiolgcge"
+    ]
+  },
+  "availability": [
+    {
+      "store": "Chrome Web Store",
+      "browsers": [
+        "Chrome",
+        "Brave",
+        "Edge",
+        "Opera",
+        "Vivaldi",
+        "Arc"
+      ],
+      "state": "protected",
+      "url": "https://chromewebstore.google.com/detail/mcohilncbfahbmgdjkbpemcciiolgcge",
+      "source": "https://web3.okx.com/download"
+    },
+    {
+      "store": "Firefox Add-ons",
+      "browsers": [
+        "Firefox"
+      ],
+      "state": "not-found",
+      "note": "OKX mentions Firefox, but no listing by OKX was found on addons.mozilla.org (2026-10-16)"
+    },
+    {
+      "store": "Edge Add-ons",
+      "browsers": [
+        "Edge"
+      ],
+      "state": "not-found",
+      "note": "No Edge Add-ons listing found; Edge installs it from the Chrome Web Store"
+    },
+    {
+      "store": "Safari",
+      "browsers": [
+        "Safari"
+      ],
+      "state": "not-offered",
+      "note": "No desktop Safari extension from the publisher"
+    }
+  ]
 }

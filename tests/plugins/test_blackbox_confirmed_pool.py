@@ -12,9 +12,10 @@ from __future__ import annotations
 import copy
 import dataclasses
 import json
-from datetime import date, timedelta
+from datetime import timedelta
 
 import pytest
+from _clock import utc_today
 from _community_rows import GRAPH, NETWORK, Reporter, signed_row
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from _machines import SWM, Machine, share_report
@@ -42,7 +43,7 @@ def signing_manifest(manifest, root) -> str:
     return key_manifest.sign_manifest(manifest, root).to_text()
 
 PACKAGE = "dep:npm:evil-pkg@1.0.0"
-TODAY = date.today().isoformat()
+TODAY = utc_today().isoformat()
 
 
 @pytest.fixture(autouse=True)
@@ -130,7 +131,7 @@ def test_a_confirmation_leaves_the_pool_when_the_threats_community_lifetime_has_
         manifest = read.curator.community.manifest
 
         def on(days):
-            day = (date.today() + timedelta(days=days)).isoformat()
+            day = (utc_today() + timedelta(days=days)).isoformat()
             return [entry.identifier for entry in pool.confirmed_pool(manifest, rows, read.reports, graph=GRAPH, today=day)]
     assert on(47) == [PACKAGE, IP] and on(48) == [PACKAGE]              # an IP lives 47 days, a package 460
     assert on(460) == [PACKAGE] and on(461) == []
@@ -338,7 +339,7 @@ def test_a_bundle_fails_as_a_whole(valve, what, expected):
 
 
 def test_an_old_bundle_reports_expired_entries_and_keeps_the_rest(valve):
-    later = (date.today() + timedelta(days=60)).isoformat()                  # past an IP's 47 days, inside a package's 460
+    later = (utc_today() + timedelta(days=60)).isoformat()                  # past an IP's 47 days, inside a package's 460
     results = {r.identifier: r for r in valve.verify(valve.bundle(), today=later).entries}
     assert results[PACKAGE].ok and not results[IP].ok and "expired" in results[IP].reason
 

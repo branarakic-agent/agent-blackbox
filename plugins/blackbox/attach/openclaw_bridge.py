@@ -5,6 +5,7 @@ Blackbox entries, keeping everything else), and removes it on detach.
 """
 
 from __future__ import annotations
+from . import declined
 
 import logging
 import json
@@ -91,6 +92,7 @@ def _is_missing_pre_blackbox_load_path(value: Any) -> bool:
         return True
 
 
+@declined.remembers("openclaw", switched_off=False)
 def attach_openclaw(workspace: Path, *, dry_run: bool = False) -> dict[str, Any]:
     """Enable Blackbox in a single OpenClaw *workspace*.
 
@@ -179,7 +181,7 @@ def _desired_entry(cfg: dict[str, Any]) -> dict[str, Any]:
             # (consent is read from blackboxHome, so one consent record covers both runtimes).
             "communityGraphId": cfg.get("community_graph_id", ""),
             "communityGraphPeerId": cfg.get("community_graph_peer_id", ""),
-            "report": bool(cfg.get("report", True)),   # on by default (2026-10-12); the opt-out record still gates sends
+            "report": bool(cfg.get("report", False)),   # opt-in (2026-10-16); the consent record still gates sends
             "dailyReportLimit": int(cfg.get("daily_report_limit") or constants.DEFAULT_DAILY_REPORT_LIMIT),
             "reportMinSeverity": cfg.get("report_min_severity", "high"),
         },
@@ -242,6 +244,7 @@ def _merge_openclaw(data: dict[str, Any], cfg: dict[str, Any], load_path: Option
     return changed
 
 
+@declined.remembers("openclaw", switched_off=True)
 def detach_openclaw(workspace: Path, *, dry_run: bool = False) -> dict[str, Any]:
     """Disable Blackbox in a single OpenClaw *workspace* (idempotent, fail-open)."""
     workspace = workspace.expanduser()

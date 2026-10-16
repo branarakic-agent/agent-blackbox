@@ -21,9 +21,8 @@ case); a template is expanded from the environment at the time of the check, so
 path segments: a ``*`` in a template stands for one or more characters inside one
 segment — no regular expression is built from manifest text.
 
-Moved here from ``detection/app_wallets.py`` (shields S4b), built from packs instead of
-the ``APP_WALLETS`` rows; that copy stays wired to the old guard path until S4c and is
-deleted in S5b.
+Moved here from ``detection/app_wallets.py`` (since deleted), built from packs instead of
+its ``APP_WALLETS`` rows.
 
 Pattern: Specification — a pack is data (places, pointer); one matcher serves every pack.
 

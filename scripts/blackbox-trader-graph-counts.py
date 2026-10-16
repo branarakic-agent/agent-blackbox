@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """What Umanitek's verified threat graph knows about crypto — the dated, repeatable count.
 
-Writes ``plugins/blackbox/dashboard/static/trader-shield-graph.json``, which the
-``/trader-shield`` page shows. Re-run it to refresh the numbers (the weekly figure):
+Writes ``plugins/blackbox/shields/trader/graph.json``, which the Trader Shield page
+(``/shields/trader``) shows. Re-run it to refresh the numbers (the weekly figure):
 the queries are fixed here, so two runs a week apart count the same way, and the
 file records when and against what it was counted.
 
@@ -13,7 +13,7 @@ production node serves other people. It sends read-only SELECT queries and nothi
 Usage::
 
     python3 scripts/blackbox-trader-graph-counts.py --store http://127.0.0.1:7878/query \\
-        --node "bench test node bb-trader-1" [--out path/to/trader-shield-graph.json]
+        --node "bench test node bb-trader-1" [--out path/to/graph.json]
 
 Standard library only, so it runs on a bench without the plugin's environment.
 """
@@ -144,12 +144,16 @@ def collect(store: str, timeout: float) -> dict[str, object]:
     }
 
 
+#: Where the figures go: Trader Shield's own folder, served at /shields/trader/graph.json.
+DEFAULT_OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "plugins", "blackbox", "shields",
+                           "trader", "graph.json")
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--store", required=True, help="SPARQL query URL of a TEST node's local store")
     parser.add_argument("--node", required=True, help="what was counted, as shown on the page (e.g. 'bench test node')")
-    parser.add_argument("--out", default=os.path.join(os.path.dirname(__file__), "..", "plugins", "blackbox", "dashboard",
-                                                      "static", "trader-shield-graph.json"))
+    parser.add_argument("--out", default=DEFAULT_OUT)
     parser.add_argument("--timeout", type=float, default=300.0)
     args = parser.parse_args(argv)
     figures = collect(args.store, args.timeout)

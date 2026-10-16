@@ -34,6 +34,8 @@ kernel_identity = load_blackbox("kernel.identity")
 community_sharing = load_blackbox("community.sharing")
 guard_background = load_blackbox("guard.background")
 guard_reporting = load_blackbox("guard.reporting")
+#: No shield claims these tests' findings: the category and tier policy alone decides.
+NO_SHIELDS = load_blackbox("shields").ShieldsSnapshot()
 ruleset_mod = load_blackbox("ruleset")
 settings = load_blackbox("kernel.settings")
 
@@ -333,21 +335,21 @@ def _finding(category, severity, source):
 
 def test_flag_worthy_drops_category_below_min_severity():
     cfg = config_mod.BlackboxConfig(categories={"dependency": {"min_severity": "critical"}})
-    kept = guard_reporting._flag_worthy(cfg, [_finding("dependency", "high", "public")])
+    kept = guard_reporting._flag_worthy(cfg, [_finding("dependency", "high", "public")], NO_SHIELDS)
     assert kept == []  # high < the dependency critical floor
 
 
 def test_flag_worthy_keeps_category_at_min_severity():
     cfg = config_mod.BlackboxConfig(categories={"dependency": {"min_severity": "critical"}})
     findings = [_finding("dependency", "critical", "public")]
-    assert guard_reporting._flag_worthy(cfg, findings) == findings
+    assert guard_reporting._flag_worthy(cfg, findings, NO_SHIELDS) == findings
 
 
 def test_flag_worthy_disabled_category_drops_public_confirmed():
     # A disabled category drops even a source=="public" confirmed finding —
     # the user explicitly turned this category off.
     cfg = config_mod.BlackboxConfig(categories={"dependency": {"enabled": False}})
-    kept = guard_reporting._flag_worthy(cfg, [_finding("dependency", "critical", "public")])
+    kept = guard_reporting._flag_worthy(cfg, [_finding("dependency", "critical", "public")], NO_SHIELDS)
     assert kept == []
 
 
@@ -363,7 +365,7 @@ def test_flag_worthy_custom_bypasses_category_policy():
         confirmed=False,
         source="custom",
     )
-    kept = guard_reporting._flag_worthy(cfg, [custom])
+    kept = guard_reporting._flag_worthy(cfg, [custom], NO_SHIELDS)
     assert kept == [custom]
 
 

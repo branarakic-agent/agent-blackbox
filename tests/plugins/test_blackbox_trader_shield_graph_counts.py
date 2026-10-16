@@ -1,4 +1,4 @@
-"""What the verified graph knows about crypto: the counts the /trader-shield page shows.
+"""What the verified graph knows about crypto: the counts the Trader Shield page shows.
 
 The numbers come from scripts/blackbox-trader-graph-counts.py, run against a test node's
 copy of the verified graph (never a production node) and saved with the date it ran. These
@@ -12,10 +12,13 @@ import json
 import re
 from pathlib import Path
 
-from plugins.blackbox.dashboard import protection
+from plugins.blackbox import shields
+from plugins.blackbox.dashboard import shields_routes
 
 REPO = Path(__file__).resolve().parents[2]
-COUNTS = json.loads(protection.GRAPH_COUNTS.read_text(encoding="utf-8"))
+TRADER = shields.get("trader")
+GRAPH = TRADER.folder / "graph.json"
+COUNTS = json.loads(GRAPH.read_text(encoding="utf-8"))
 
 
 def _script():
@@ -58,9 +61,13 @@ def test_the_package_pattern_does_not_count_words_that_only_contain_a_crypto_wor
         assert not pattern.search(other), other
 
 
+def test_the_script_writes_the_file_the_shield_serves():
+    assert Path(_script().DEFAULT_OUT).resolve() == GRAPH.resolve()
+
+
 def test_the_page_shows_the_counts_it_is_served():
-    page = protection.TRADER_SHIELD_PAGE.read_text(encoding="utf-8")
-    assert 'fetch("/trader-shield/graph.json"' in page and 'id="known-stats"' in page
+    page = TRADER.page.read_text(encoding="utf-8")
+    assert 'getJSON("graph.json")' in page and 'id="known-stats"' in page
 
 
 def test_the_dashboard_serves_the_counts():
@@ -68,12 +75,12 @@ def test_the_dashboard_serves_the_counts():
     from fastapi.testclient import TestClient
 
     app = FastAPI()
-    protection.register_protection_routes(app)
-    response = TestClient(app).get("/trader-shield/graph.json")
+    shields_routes.register_pages(app)
+    response = TestClient(app).get("/shields/trader/graph.json")
     assert response.status_code == 200 and response.json()["as_of"] == COUNTS["as_of"]
 
 
 def test_the_quick_start_ends_with_a_safe_test():
-    page = protection.TRADER_SHIELD_PAGE.read_text(encoding="utf-8")
+    page = TRADER.page.read_text(encoding="utf-8")
     steps = re.findall(r"<li><span><b>(.*?)</b>", page.split('class="qs"', 1)[1].split("</ol>", 1)[0])
     assert steps[0] == "Install Blackbox" and steps[-1] == "Try it safely."

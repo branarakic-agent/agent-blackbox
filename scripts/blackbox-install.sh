@@ -54,6 +54,13 @@ fi
 DKG_NETWORK="${BLACKBOX_DKG_NETWORK:-mainnet-base}"   # a valid dkg mainnet (mainnet-base | mainnet-gnosis). Base uses ETH for gas. No testnet.
 BLACKBOX_HOME="${BLACKBOX_HOME:-$HERMES_HOME/blackbox}"
 BLACKBOX_SYSTEMD_DIR=/etc/systemd/system   # where system units go (node service units below)
+BLACKBOX_DKG_LAUNCHD_LABEL=ai.umanitek.blackbox-dkg   # the node's LaunchAgent on macOS (register_boot_service)
+# The system folders every service PATH carries after its own tools. /usr/sbin is not optional: the
+# DKG node runs `lsof` to see who holds its store's LOCK and refuses to start when it cannot, and
+# macOS (and RHEL-family Linux) keep lsof only in /usr/sbin — a LaunchAgent without it crash-looped
+# at every login (KI-427).
+BLACKBOX_SERVICE_SYSTEM_PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+BLACKBOX_LINGER_DIR=/var/lib/systemd/linger   # systemd-logind keeps one file per lingering user here
 BLACKBOX_PTRACE_SCOPE_FILE=/proc/sys/kernel/yama/ptrace_scope   # read by register_key_console
 BLACKBOX_DKG_PORT_EXPLICIT=false
 [ -n "${BLACKBOX_DKG_PORT+x}" ] && BLACKBOX_DKG_PORT_EXPLICIT=true
@@ -95,6 +102,12 @@ BLACKBOX_DKG_NODE_OPTIONS=""
 BLACKBOX_DKG_EXACT_BATCH_STREAM_ENABLED="${BLACKBOX_DKG_EXACT_BATCH_STREAM_ENABLED:-1}"
 BLACKBOX_DKG_VM_RECOVERY_PREFETCH_ENABLED="${BLACKBOX_DKG_VM_RECOVERY_PREFETCH_ENABLED:-1}"
 NODE_MAJOR="${BLACKBOX_NODE_MAJOR:-22}"
+# nvm's installer is run only after its bytes match this pinned sha256 (Hermes catalog review,
+# 2026-10-16): a changed or tampered script never reaches bash. The hash is of
+# https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh and equals install.sh in the
+# v0.40.3 release archive. Moving to a new nvm release moves both lines together.
+NVM_INSTALL_VERSION_PIN="v0.40.3"
+NVM_INSTALL_SHA256="2d8359a64a3cb07c02389ad88ceecd43f2fa469c06104f92f98df5b6f315275f"
 BLACKBOX_DEFAULT_CONTEXT_GRAPH_ID="0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox-vm"
 BLACKBOX_CONTEXT_GRAPH_ID="${BLACKBOX_CONTEXT_GRAPH_ID:-$BLACKBOX_DEFAULT_CONTEXT_GRAPH_ID}"
 BLACKBOX_GRAPH_PEER_ID="${BLACKBOX_GRAPH_PEER_ID:-12D3KooWBJskzr2unXQG9mR3LRZFUJoxWr1PN6hTbyWyKndHXjZM}"
@@ -246,6 +259,167 @@ blackbox_dkg() {
     DKG_VM_RECOVERY_PREFETCH_ENABLED="$BLACKBOX_DKG_VM_RECOVERY_PREFETCH_ENABLED" \
     NODE_OPTIONS="$BLACKBOX_DKG_NODE_OPTIONS" \
     "$BLACKBOX_DKG_BIN" "$@"
+}
+
+# The service an earlier install registered to supervise the node (register_boot_service):
+# "systemd" (system unit), "systemd-user", "launchd", or nothing — a first install, where the
+# installer runs the node itself until the service is registered at the end.
+blackbox_dkg_supervisor() {
+    if command -v systemctl >/dev/null 2>&1; then
+        if [ -f "$BLACKBOX_SYSTEMD_DIR/blackbox-dkg.service" ] &&
+            systemctl is-enabled --quiet blackbox-dkg 2>/dev/null; then
+            echo systemd
+            return 0
+        fi
+        if [ -f "$HOME/.config/systemd/user/blackbox-dkg.service" ] &&
+            systemctl --user is-enabled --quiet blackbox-dkg 2>/dev/null; then
+            echo systemd-user
+            return 0
+        fi
+    fi
+    if [ "$(uname -s 2>/dev/null)" = Darwin ] && [ -f "$HOME/Library/LaunchAgents/$BLACKBOX_DKG_LAUNCHD_LABEL.plist" ]; then
+        echo launchd
+    fi
+    return 0
+}
+
+# `blackbox_dkg_control start|stop|restart` — through the supervising service when there is
+# one. A supervised node stopped or started with `dkg stop`/`dkg start` behind the service's
+# back makes the two fight: the service's node exits "failed", the service restarts it, and
+# the unit's ExecStartPre `dkg stop` (the orphan guard) kills the copy the installer just
+# started — the unit flaps, and the catch-up that follows fails "Daemon already running"
+# (KI-414). The plugin restarts through the service for the same reason (FIX-0014). A stop
+# through the service stays stopped (systemd does not restart a requested stop; launchd's
+# job is unloaded) until the matching start.
+blackbox_dkg_control() {
+    local action="$1" target
+    case "$(blackbox_dkg_supervisor)" in
+        systemd) systemctl "$action" blackbox-dkg ;;
+        systemd-user) systemctl --user "$action" blackbox-dkg ;;
+        launchd)
+            target="gui/$(id -u)/$BLACKBOX_DKG_LAUNCHD_LABEL"
+            case "$action" in
+                stop) launchctl bootout "$target" 2>/dev/null || true ;;
+                start | restart)
+                    if launchctl print "$target" >/dev/null 2>&1; then
+                        if [ "$action" = restart ]; then
+                            launchctl kickstart -k "$target"
+                        else
+                            launchctl kickstart "$target"
+                        fi
+                    else
+                        launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/$BLACKBOX_DKG_LAUNCHD_LABEL.plist"
+                    fi
+                    ;;
+            esac
+            ;;
+        *)
+            if [ "$action" = restart ]; then
+                blackbox_dkg stop && blackbox_dkg start
+            else
+                blackbox_dkg "$action"
+            fi
+            ;;
+    esac
+}
+
+BLACKBOX_DKG_HANDOVER_WAIT_SECONDS="${BLACKBOX_DKG_HANDOVER_WAIT_SECONDS:-90}"   # a node start takes 10-60 s
+
+# The pid of the process the node's service runs (`dkg start --foreground`, the DKG CLI's own
+# supervisor), or nothing when the service is not running it.
+blackbox_dkg_service_pid() {
+    local pid=""
+    case "$1" in
+        systemd) pid="$(systemctl show -p MainPID --value blackbox-dkg 2>/dev/null)" ;;
+        systemd-user) pid="$(systemctl --user show -p MainPID --value blackbox-dkg 2>/dev/null)" ;;
+        launchd)
+            pid="$(launchctl print "gui/$(id -u)/$BLACKBOX_DKG_LAUNCHD_LABEL" 2>/dev/null |
+                sed -nE 's/^[[:space:]]*pid = ([0-9]+).*/\1/p' | head -n 1)"
+            ;;
+    esac
+    pid="$(printf '%s' "$pid" | tr -dc '0-9')"
+    [ "$pid" = 0 ] && pid=""   # systemd's MainPID for a unit that is not running
+    printf '%s' "$pid"
+}
+
+# Whether the running node is the one the service *supervisor* runs. The node daemon writes its
+# own pid to daemon.pid; under `dkg start --foreground` it is a child of the process the service
+# started, so either that process or its parent is the service's.
+blackbox_dkg_owned_by() {
+    local service_pid node_pid parent_pid
+    service_pid="$(blackbox_dkg_service_pid "$1")"
+    [ -n "$service_pid" ] || return 1
+    [ -f "$BLACKBOX_DKG_HOME/daemon.pid" ] || return 1
+    node_pid="$(tr -dc '0-9' <"$BLACKBOX_DKG_HOME/daemon.pid")"
+    [ -n "$node_pid" ] || return 1
+    [ "$node_pid" = "$service_pid" ] && return 0
+    parent_pid="$(ps -o ppid= -p "$node_pid" 2>/dev/null | tr -dc '0-9')"
+    [ "$parent_pid" = "$service_pid" ]
+}
+
+# Where launchd keeps the node's error output: launchd has no journal, so without this a node
+# that fails under the LaunchAgent leaves no trace. Errors only — the node writes its own log.
+blackbox_dkg_launchd_error_log() {
+    printf '%s/launchd-errors.log' "$BLACKBOX_DKG_HOME"
+}
+
+blackbox_dkg_answers() {
+    curl -fsS --max-time 5 "$BLACKBOX_DKG_DAEMON_URL/api/status" >/dev/null 2>&1
+}
+
+# A first install has no service yet, so it runs the node itself (with install-only settings,
+# e.g. sync-on-connect off). Registering the service does not move that node under it: launchd's
+# copy exits "Daemon already running" and is relaunched for ever, systemd's is only enabled — so
+# until a reboot nothing supervises the node and it keeps the install-only settings (KI-426).
+# Hand it over: stop the installer's copy, start the node through its service, and confirm the
+# service's process is the one serving. If the service does not take it, the node is started
+# again directly so protection never drops, and the run says so.
+hand_dkg_node_to_service() {
+    local supervisor waited=0
+    supervisor="$(blackbox_dkg_supervisor)"
+    [ -n "$supervisor" ] || return 0
+    if blackbox_dkg_owned_by "$supervisor" && blackbox_dkg_answers; then
+        ok "The DKG node already runs under its $supervisor service"
+        return 0
+    fi
+    step "Handing the DKG node to its $supervisor service ..."
+    blackbox_dkg stop >/dev/null 2>&1 || true   # the installer's own, unsupervised copy
+    blackbox_dkg_control restart >/dev/null 2>&1 || true
+    while [ "$waited" -lt "$BLACKBOX_DKG_HANDOVER_WAIT_SECONDS" ]; do
+        if blackbox_dkg_owned_by "$supervisor" && blackbox_dkg_answers; then
+            ok "The DKG node now runs under its $supervisor service"
+            return 0
+        fi
+        sleep 1
+        waited=$((waited + 1))
+    done
+    warn "The $supervisor service did not take over the DKG node within ${BLACKBOX_DKG_HANDOVER_WAIT_SECONDS}s."
+    if [ "$supervisor" = launchd ] && [ -s "$(blackbox_dkg_launchd_error_log)" ]; then
+        warn "Its last errors ($(blackbox_dkg_launchd_error_log)):"
+        tail -n 5 "$(blackbox_dkg_launchd_error_log)" | sed 's/^/    /'
+    fi
+    if ! blackbox_dkg_answers; then
+        blackbox_dkg_control stop >/dev/null 2>&1 || true   # so it does not fight the direct copy
+        blackbox_dkg start >/dev/null 2>&1 || true
+    fi
+    warn "The node runs without its service until the next reboot or login; re-run the installer to retry."
+}
+
+# A per-user systemd service runs only while its user has a login session: without lingering,
+# logging out stops the node and a reboot does not start it until that user logs in again — on a
+# server nobody logs in to, it never runs (KI-428). Lingering is systemd's documented switch for
+# this; most systems let a user set it for themselves, otherwise it needs root once.
+ensure_user_lingering() {
+    command -v loginctl >/dev/null 2>&1 || return 0
+    local user
+    user="$(id -un)"
+    [ -e "$BLACKBOX_LINGER_DIR/$user" ] && return 0
+    if loginctl enable-linger "$user" >/dev/null 2>&1 || sudo -n loginctl enable-linger "$user" >/dev/null 2>&1; then
+        ok "Lingering on for $user: Blackbox's services keep running after logout and start at boot"
+    else
+        warn "Blackbox's services stop when $user logs out and start again only at the next login."
+        warn "To keep them running: sudo loginctl enable-linger $user"
+    fi
 }
 
 blackbox_has_dkg_state() {
@@ -604,7 +778,7 @@ PYEOF
         fi
         if [ "$BLACKBOX_DKG_ALREADY_RUNNING" = true ]; then
             step "Pausing DKG so its overloaded store can pass recovery checks ..."
-            if blackbox_dkg stop; then
+            if blackbox_dkg_control stop; then
                 BLACKBOX_DKG_ALREADY_RUNNING=false
                 if check_blackbox_blazegraph; then
                     return 0
@@ -945,6 +1119,19 @@ move_broken_blackbox_repo_aside() {
     step "Preserved it at $backup"
 }
 
+# Whether the checkout's HEAD is already part of origin/$REPO_BRANCH's history — then moving
+# to the new tip loses nothing. A depth-1 clone holds none of that history, so a bounded
+# stretch more is fetched to check (never the whole repository); an answer it cannot give is
+# "no", which keeps the strict fast-forward and its refusal (KI-417).
+BLACKBOX_HISTORY_CHECK_DEPTH=200
+blackbox_head_in_branch() {
+    local remote="refs/remotes/origin/$REPO_BRANCH"
+    git -C "$REPO_DIR" merge-base --is-ancestor HEAD "$remote" 2>/dev/null && return 0
+    [ "$(git -C "$REPO_DIR" rev-parse --is-shallow-repository 2>/dev/null)" = true ] || return 1
+    git -C "$REPO_DIR" fetch -q --deepen="$BLACKBOX_HISTORY_CHECK_DEPTH" origin "$REPO_BRANCH" 2>/dev/null || return 1
+    git -C "$REPO_DIR" merge-base --is-ancestor HEAD "$remote" 2>/dev/null
+}
+
 resolve_repo() {
     local script_src="${BASH_SOURCE[0]:-}"
     if [ -n "$script_src" ] && [ -f "$script_src" ]; then
@@ -995,13 +1182,19 @@ resolve_repo() {
         # (HEAD is what it last fetched), move to the new tip; --keep still
         # refuses to overwrite uncommitted changes. Otherwise keep the strict
         # fast-forward, which stops with git's reason instead of losing work.
-        if [ -n "$fetched_before" ] && [ "$(git -C "$REPO_DIR" rev-parse HEAD)" = "$fetched_before" ]; then
+        # HEAD can also be an older commit of the branch that this install did not fetch last
+        # (the checkout was moved outside the installer): that is still no work of its own, but
+        # a depth-1 clone cannot show it (KI-417) — blackbox_head_in_branch fetches a bounded
+        # stretch of history to check.
+        if { [ -n "$fetched_before" ] && [ "$(git -C "$REPO_DIR" rev-parse HEAD)" = "$fetched_before" ]; } ||
+            blackbox_head_in_branch; then
             if ! git -C "$REPO_DIR" reset -q --keep "refs/remotes/origin/$REPO_BRANCH"; then
                 err "Could not update $REPO_DIR to origin/$REPO_BRANCH: it has uncommitted changes (git's reason is above)."
                 return 1
             fi
         elif ! git -C "$REPO_DIR" pull --ff-only origin "$REPO_BRANCH"; then
-            err "Could not fast-forward $REPO_DIR to origin/$REPO_BRANCH: it holds local commits (git's reason is above)."
+            err "Could not fast-forward $REPO_DIR to origin/$REPO_BRANCH: it holds commits that are not on that branch (git's reason is above):"
+            git -C "$REPO_DIR" log --oneline -3 "refs/remotes/origin/$REPO_BRANCH..HEAD" >&2
             return 1
         fi
     else
@@ -1073,12 +1266,23 @@ ensure_node() {
         HAS_NODE=false
         return 0
     fi
-    warn "Node.js $NODE_MAJOR+ not found — installing it automatically (via nvm)…"
     # nvm is the portable path on both macOS and Linux and needs no sudo.
     export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+    # A Node that nvm installed on an earlier run is not on a fresh shell's PATH; use it
+    # rather than announcing and running a second install (KI-418).
+    if [ -s "$NVM_DIR/nvm.sh" ]; then
+        # shellcheck disable=SC1091
+        . "$NVM_DIR/nvm.sh" >/dev/null 2>&1 || true
+        if nvm use "$NODE_MAJOR" >/dev/null 2>&1 && _node_ok; then
+            ok "Node.js $(node -v) (installed earlier with nvm) + npm $(npm -v 2>/dev/null || echo '?')"
+            HAS_NODE=true
+            return 0
+        fi
+    fi
+    warn "Node.js $NODE_MAJOR+ not found — installing it automatically (via nvm)…"
     if [ ! -s "$NVM_DIR/nvm.sh" ]; then
         step "Installing nvm into $NVM_DIR …"
-        if ! curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash >/dev/null 2>&1; then
+        if ! install_nvm_verified; then
             warn "Could not install nvm automatically."
             _node_manual_hint
             HAS_NODE=false
@@ -1096,6 +1300,39 @@ ensure_node() {
         _node_manual_hint
         HAS_NODE=false
     fi
+}
+
+# The sha256 of a file, by whichever tool this system has (macOS: shasum; Linux: sha256sum).
+_sha256_of() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum "$1" | cut -d' ' -f1
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 "$1" | cut -d' ' -f1
+    else
+        return 1
+    fi
+}
+
+# Download nvm's installer to a file, check it against NVM_INSTALL_SHA256, and only then run it.
+# Fails (non-zero) without running anything when the download fails, no sha256 tool exists, or
+# the bytes differ from the pin — a mismatch is said plainly, it is never retried or skipped.
+install_nvm_verified() {
+    local script actual
+    script="$(mktemp "${TMPDIR:-/tmp}/blackbox-nvm-install.XXXXXX")" || return 1
+    if ! curl -fsSL "https://raw.githubusercontent.com/nvm-sh/nvm/${NVM_INSTALL_VERSION_PIN}/install.sh" -o "$script"; then
+        rm -f "$script"
+        return 1
+    fi
+    actual="$(_sha256_of "$script")" || { warn "No sha256 tool (sha256sum or shasum) to check nvm's installer; not running it."; rm -f "$script"; return 1; }
+    if [ "$actual" != "$NVM_INSTALL_SHA256" ]; then
+        warn "nvm's installer did not match its pinned checksum (expected $NVM_INSTALL_SHA256, got $actual); not running it."
+        rm -f "$script"
+        return 1
+    fi
+    local status=0
+    bash "$script" >/dev/null 2>&1 || status=$?
+    rm -f "$script"
+    return "$status"
 }
 
 _node_manual_hint() {
@@ -1667,9 +1904,7 @@ install_dkg() {
             return 0
         fi
         step "Restarting the Blackbox-owned DKG node to activate sync and relay updates ..."
-        if blackbox_dkg stop; then
-            blackbox_dkg start || true
-        fi
+        blackbox_dkg_control restart || true
         if wait_for_blackbox_dkg_runtime; then
             rm -f "$BLACKBOX_DKG_STORE_RESET_MARKER"
             ok "Blackbox DKG node restarted with the current sync settings"
@@ -1700,7 +1935,7 @@ install_dkg() {
     # DKG's launcher can give up its 15-second startup wait just before a
     # healthy daemon finishes loading a large Blazegraph namespace. The
     # commit-aware readiness check below is the authoritative result.
-    blackbox_dkg start || true
+    blackbox_dkg_control start || true
     if wait_for_blackbox_dkg_runtime; then
         rm -f "$BLACKBOX_DKG_STORE_RESET_MARKER"
         ok "DKG node bootstrapped on $DKG_NETWORK"
@@ -1876,11 +2111,12 @@ defaults = {
     "context_graph_id": context_graph_id,
     "graph_peer_id": graph_peer_id,
     "sync_interval": 3600,
-    # Community sharing is ON by default with an easy opt-out (2026-10-12):
-    # privacy-safe threat statements only, never prompts, commands, paths or
-    # files. The daily cap is the plugin's default bound (100 since 2026-10-12; 20 before): 0 used to mean
+    # Community sharing is OPT-IN (2026-10-16): off until the operator runs
+    # `blackbox report --enable-sharing` or uses the dashboard toggle, which also
+    # record the acceptance. The installer never records it. The daily cap is the
+    # plugin's default bound (100 since 2026-10-12; 20 before): 0 used to mean
     # NO cap, and the plugin no longer accepts it (Refine R1).
-    "report": True,
+    "report": False,
     "daily_report_limit": 100,
     "report_min_severity": "high",
     "block_severity": "critical",
@@ -1919,18 +2155,13 @@ def _consent_in_force(checkout):
 if blackbox.get("report") is True and not _consent_in_force(repo_dir):
     blackbox["report"] = False
     added.append("report")
-# Sharing became ON by default on 2026-10-12. Older installers wrote
-# `report: False` automatically ("not shipped yet"), so an upgrade turns it on
-# ONCE, recorded by the marker below. An operator who opted out (a withdrawn
-# record: _consent_in_force says no) is left off, and a `report: false` set
-# after the marker exists is never flipped again.
-SHARING_DEFAULT_MARK = "on-2026-10-12"
-if blackbox.get("sharing_default") != SHARING_DEFAULT_MARK:
-    if blackbox.get("report") is not True and _consent_in_force(repo_dir):
-        blackbox["report"] = True
-        added.append("report")
-    blackbox["sharing_default"] = SHARING_DEFAULT_MARK
-    added.append("sharing_default")
+# Sharing is opt-in again (2026-10-16). The 2026-10-12 installers turned sharing
+# on by default and wrote a `sharing_default` marker; the KI-184 rule above has
+# already turned off every such install that never recorded an acceptance, and
+# the marker now means nothing, so it is removed. An operator who opted in keeps
+# sharing. The installer never turns sharing on.
+if blackbox.pop("sharing_default", None) is not None:
+    added.append("sharing_default (removed)")
 # `daily_report_limit: 0` was the pre-R1 "no cap" and the plugin refuses it;
 # 20 is what earlier installers wrote as the default (raised to 100 on
 # 2026-10-12), so it moves with the default. Any other operator-chosen cap is kept.
@@ -2028,18 +2259,30 @@ configure_blackbox_mode() {
     fi
 }
 
-# ── Auto-protect every local agent (best-effort, non-fatal) ─────────────────
-# Discovers every local Hermes home + OpenClaw workspace and enables Blackbox
-# in each, so protection is on everywhere without per-instance setup.
+# ── Protect agents (best-effort, non-fatal) ─────────────────────────────────
+# Blackbox protects the Hermes home this installer set up ($HERMES_HOME). Every
+# other Hermes profile or OpenClaw workspace is its own trust and credential
+# boundary, so it is attached only when the operator says so: `blackbox attach`
+# lists the ones not yet protected and asks [y/N] on the terminal (/dev/tty, so
+# it works under `curl | bash`); with no terminal it attaches none of them.
+# Scripted installs that want every agent protected set BLACKBOX_ATTACH_ALL=1.
 attach_all_agents() {
-    heading "Protecting all local agents"
-    step "Discovering local Hermes homes + OpenClaw workspaces (blackbox attach) ..."
-    if "$HERMES_BIN" blackbox attach; then
-        ok "Blackbox attached to all discovered local agents"
+    heading "Protecting your agents"
+    step "Protecting the Hermes home at $HERMES_HOME (blackbox attach) ..."
+    if "$HERMES_BIN" blackbox attach "$HERMES_HOME"; then
+        ok "Blackbox protects $HERMES_HOME"
     else
-        warn "Could not auto-attach to every local agent (this is non-fatal)."
-        step "Re-run anytime with:  blackbox attach"
+        warn "Could not protect $HERMES_HOME (this is non-fatal)."
+        step "Re-run anytime with:  blackbox attach $HERMES_HOME"
     fi
+    case "$(printf '%s' "${BLACKBOX_ATTACH_ALL:-}" | tr '[:upper:]' '[:lower:]')" in
+        1|true|yes)
+            step "BLACKBOX_ATTACH_ALL is set: protecting every Hermes home + OpenClaw workspace found ..."
+            "$HERMES_BIN" blackbox attach --all || warn "Could not protect every agent (this is non-fatal)."
+            return 0 ;;
+    esac
+    step "Looking for other agents on this machine (Hermes profiles, OpenClaw workspaces) ..."
+    "$HERMES_BIN" blackbox attach || step "Protect others later with:  blackbox attach <home>   (or --all)"
 }
 
 # ── Optional: configure the LLM prompt-injection reviewer ───────────────────
@@ -2127,18 +2370,19 @@ start_dashboard() {
     step "Log: $log_file"
 }
 
-# Community sharing is ON by default (2026-10-12): every summary says so, what
-# is sent, and the one command that turns it off.
+# Community sharing is OPT-IN (2026-10-16): every summary says it is off unless
+# the operator turned it on, what would be sent, and the one command that turns it on.
 print_sharing_notice() {
     cat <<'EOF'
 
-  Community sharing is ON: when your agent meets a threat already listed in the
-  verified threat graph, this node shares a privacy-safe statement (the threat's
-  identifier and type, the tool that met it, blocked or flagged, and what the
-  threat targets; never prompts, commands, file paths or files) with the
-  Blackbox community graph. Turn it off any time:
+  Community sharing is OFF unless you turn it on (it is opt-in). When on, and
+  your agent meets a threat already listed in the verified threat graph, this
+  node shares a privacy-safe statement (the threat's identifier and type, the
+  tool that met it, blocked or flagged, and what the threat targets; never
+  prompts, commands, file paths or files) with the Blackbox community graph.
+  Turn it on (this records your agreement to the reporter terms):
 
-      blackbox report --disable-sharing        (or the dashboard's sharing toggle)
+      blackbox report --enable-sharing         (or the dashboard's sharing toggle)
 EOF
 }
 
@@ -2275,7 +2519,7 @@ After=network-online.target
 
 [Service]
 Type=simple
-Environment=PATH=$node_bin_dir:/usr/local/bin:/usr/bin:/bin
+Environment=PATH=$node_bin_dir:$BLACKBOX_SERVICE_SYSTEM_PATH
 Environment=DKG_HOME=$BLACKBOX_DKG_HOME
 # Connection-time sync stays ON: the meta sync on connect is what delivers
 # context-graph authority to subscribers — with it off, community-graph
@@ -2299,7 +2543,7 @@ Environment=DKG_STORE_QUEUE_LIMIT=$BLACKBOX_DKG_STORE_QUEUE_LIMIT
 # Clear any orphaned daemon before starting: DKG CLI commands auto-spawn a
 # detached daemon when none is running; that orphan holds daemon.pid and
 # would crash-loop this unit forever ("Daemon already running", KI-045).
-ExecStartPre=-/bin/sh -c 'PATH=$node_bin_dir:/usr/bin:/bin DKG_HOME=$BLACKBOX_DKG_HOME $BLACKBOX_DKG_BIN stop >/dev/null 2>&1; sleep 2'
+ExecStartPre=-/bin/sh -c 'PATH=$node_bin_dir:$BLACKBOX_SERVICE_SYSTEM_PATH DKG_HOME=$BLACKBOX_DKG_HOME $BLACKBOX_DKG_BIN stop >/dev/null 2>&1; sleep 2'
 ExecStart=$BLACKBOX_DKG_BIN start --foreground
 ExecStop=$BLACKBOX_DKG_BIN stop
 TimeoutStopSec=30
@@ -2314,24 +2558,27 @@ UNIT
                     && ok "systemd service registered (blackbox-dkg) — the node survives reboots" \
                     || warn "could not enable blackbox-dkg service; enable manually: systemctl enable blackbox-dkg"
             else
-                systemctl --user daemon-reload && systemctl --user enable blackbox-dkg >/dev/null 2>&1 \
-                    && ok "systemd user service registered — the node survives reboots (of your session)" \
-                    || warn "could not enable the user service; enable manually: systemctl --user enable blackbox-dkg"
+                if systemctl --user daemon-reload && systemctl --user enable blackbox-dkg >/dev/null 2>&1; then
+                    ok "systemd user service registered (blackbox-dkg)"
+                    ensure_user_lingering
+                else
+                    warn "could not enable the user service; enable manually: systemctl --user enable blackbox-dkg"
+                fi
             fi
             ;;
         Darwin)
-            local plist="$HOME/Library/LaunchAgents/ai.umanitek.blackbox-dkg.plist"
+            local plist="$HOME/Library/LaunchAgents/$BLACKBOX_DKG_LAUNCHD_LABEL.plist"
             mkdir -p "$HOME/Library/LaunchAgents"
             cat > "$plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>Label</key><string>ai.umanitek.blackbox-dkg</string>
+  <key>Label</key><string>$BLACKBOX_DKG_LAUNCHD_LABEL</string>
   <key>ProgramArguments</key><array>
     <string>$BLACKBOX_DKG_BIN</string><string>start</string><string>--foreground</string>
   </array>
   <key>EnvironmentVariables</key><dict>
-    <key>PATH</key><string>$(xml_escape "$node_bin_dir:/usr/local/bin:/usr/bin:/bin")</string>
+    <key>PATH</key><string>$(xml_escape "$node_bin_dir:$BLACKBOX_SERVICE_SYSTEM_PATH")</string>
     <key>DKG_HOME</key><string>$(xml_escape "$BLACKBOX_DKG_HOME")</string>
     <key>DKG_SYNC_ON_CONNECT_ENABLED</key><string>1</string>
     <key>DKG_EXACT_BATCH_STREAM_ENABLED</key><string>$(xml_escape "$BLACKBOX_DKG_EXACT_BATCH_STREAM_ENABLED")</string>
@@ -2341,8 +2588,10 @@ UNIT
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
+  <key>StandardErrorPath</key><string>$(xml_escape "$(blackbox_dkg_launchd_error_log)")</string>
 </dict></plist>
 PLIST
+            : >"$(blackbox_dkg_launchd_error_log)" 2>/dev/null || true   # this registration's errors only
             launchctl unload "$plist" >/dev/null 2>&1 || true
             launchctl load "$plist" >/dev/null 2>&1 \
                 && ok "LaunchAgent registered — the node survives reboots" \
@@ -2352,6 +2601,7 @@ PLIST
             warn "Unknown OS — boot persistence not configured; start the node manually after reboots."
             ;;
     esac
+    hand_dkg_node_to_service
 }
 
 # Boot persistence for the DASHBOARD (KI-296). The dashboard is what keeps a
@@ -2391,7 +2641,7 @@ Wants=blackbox-dkg.service
 Type=simple
 Environment=HOME=$HOME
 Environment=HERMES_HOME=$HERMES_HOME
-Environment=PATH=$HOME/.local/bin:$node_bin_dir:/usr/local/bin:/usr/bin:/bin
+Environment=PATH=$HOME/.local/bin:$node_bin_dir:$BLACKBOX_SERVICE_SYSTEM_PATH
 ExecStart=$HERMES_BIN blackbox dashboard
 Restart=on-failure
 RestartSec=10
@@ -2424,7 +2674,7 @@ DASHUNIT
     <string>$HERMES_BIN</string><string>blackbox</string><string>dashboard</string>
   </array>
   <key>EnvironmentVariables</key><dict>
-    <key>PATH</key><string>$HOME/.local/bin:$node_bin_dir:/usr/local/bin:/usr/bin:/bin</string>
+    <key>PATH</key><string>$(xml_escape "$HOME/.local/bin:$node_bin_dir:$BLACKBOX_SERVICE_SYSTEM_PATH")</string>
     <key>HERMES_HOME</key><string>$HERMES_HOME</string>
   </dict>
   <key>RunAtLoad</key><true/>

@@ -2,6 +2,62 @@
   "id": "solflare",
   "name": "Solflare",
   "kind": "browser-extension",
-  "status": "planned",
-  "order": 160
+  "status": "supported",
+  "order": 160,
+  "verified": "2026-10-16",
+  "source": "Chrome Web Store install on Ubuntu 24.04, Chrome 155 (2026-10-16): the real extension wrote its storage under this id; addons.mozilla.org listing by the publisher, installed in Firefox 158 (2026-10-16)",
+  "stores": {
+    "chromium": [
+      "bhhhlbepdkbapadjdnnojkbgioiodbic"
+    ],
+    "firefox": [
+      "{6d72262a-b243-4dc6-8f4f-be96c74e0a86}"
+    ]
+  },
+  "logo": {
+    "file": "logo.svg",
+    "terms": "NOTICE.md",
+    "source": "https://www.solflare.com/wp-content/uploads/2024/11/App-Icon.svg"
+  },
+  "availability": [
+    {
+      "store": "Chrome Web Store",
+      "browsers": [
+        "Chrome",
+        "Brave",
+        "Edge",
+        "Opera",
+        "Vivaldi",
+        "Arc"
+      ],
+      "state": "protected",
+      "url": "https://chromewebstore.google.com/detail/bhhhlbepdkbapadjdnnojkbgioiodbic",
+      "source": "https://www.solflare.com/download/"
+    },
+    {
+      "store": "Firefox Add-ons",
+      "browsers": [
+        "Firefox"
+      ],
+      "state": "protected",
+      "url": "https://addons.mozilla.org/firefox/addon/solflare-wallet/",
+      "source": "https://www.solflare.com/download/"
+    },
+    {
+      "store": "Edge Add-ons",
+      "browsers": [
+        "Edge"
+      ],
+      "state": "not-found",
+      "note": "No Edge Add-ons listing found; Edge installs it from the Chrome Web Store"
+    },
+    {
+      "store": "Safari",
+      "browsers": [
+        "Safari"
+      ],
+      "state": "not-offered",
+      "note": "No desktop Safari extension from the publisher"
+    }
+  ]
 }

@@ -1,25 +1,29 @@
 """Whether this machine may share with the community graph — the ONE gate
-every send path asks (Refine R13, revised 2026-10-12).
+every send path asks (Refine R13, revised 2026-10-16).
 
-Community sharing is ON BY DEFAULT with an easy opt-out (founder decision
-2026-10-12: "stop it from being opt-in, make it on by default"; it was
-opt-in, default off). Nothing sent is ever a prompt, command, path or file
-(see ``docs/REPORTER_TERMS.md``); the installer and the dashboard tell the
-operator that sharing is on and how to turn it off. Turning it off is one
-action (`blackbox report --withdraw-consent`, `--disable-sharing`, or the
-dashboard toggle) and it actually stops processing: the share gate refuses
-on the next call. Turning it back on records a fresh acceptance.
+Community sharing is OPT-IN: off until the operator turns it on (2026-10-16,
+for the Hermes plugin catalog listing — telemetry in a catalog entry must be
+opt-in; it was on by default from 2026-10-12). Only two actions record the
+acceptance: `blackbox report --enable-sharing` (or `--consent`) and the
+dashboard's sharing toggle, both through :func:`for_settings` / :func:`record`.
+No installer, upgrade or automatic path ever writes it. Nothing sent is ever a
+prompt, command, path or file (see ``docs/REPORTER_TERMS.md``). Turning it off
+is one action (`blackbox report --withdraw-consent`, `--disable-sharing`, or the
+dashboard toggle) and it actually stops processing: the share gate refuses on
+the next call.
 
 The record is local, owner-readable, atomic (``$BLACKBOX_HOME/sharing_consent.json``)
 and is erased with the identity (`--erase-identity`). No record means the
-default: sharing allowed. A record with ``withdrawn_at`` means the operator
-opted out, whatever terms version it names.
+default: sharing OFF. A record is in force only when it holds an acceptance
+(``accepted_at``) and no ``withdrawn_at``, whatever terms version it names (a
+terms change does not pause sharing; the terms' "What changed" section is
+shown to the operator instead).
 
 Usage::
 
-    consent.in_force()                      # the gate's question: False only after an opt-out
-    consent.record()                        # opt back in (CLI `--consent`)
-    consent.for_settings(payload)           # a settings write that turns sharing on opts back in
+    consent.in_force()                      # the gate's question: True only after an opt-in
+    consent.record()                        # opt in (CLI `--consent` / `--enable-sharing`)
+    consent.for_settings(payload)           # a settings write that turns sharing on opts in
     consent.withdraw()                      # opt out: stops sharing
     consent.terms_text()                    # the terms shown to the operator
 """
@@ -80,34 +84,53 @@ def _record_path() -> Path:
     return constants.blackbox_home() / _RECORD_FILE
 
 
+def _text(value: Any) -> str:
+    """A record field as text: a string as written; anything else (null, a number) is
+    no value. The OpenClaw bridge reads the same file the same way (consent.ts)."""
+    return value if isinstance(value, str) else ""
+
+
 def current() -> Optional[SharingConsentRecord]:
+    """The saved sharing choice, or None when there is no readable record (a missing
+    file, malformed JSON, or JSON that is not an object)."""
     try:
         data = json.loads(_record_path().read_text(encoding="utf-8-sig"))
-        return SharingConsentRecord(terms_hash=str(data.get("terms_hash", "")), terms_version=str(data.get("terms_version", "")),
-                                    accepted_at=str(data.get("accepted_at", "")), withdrawn_at=str(data.get("withdrawn_at", "")))
-    except (OSError, ValueError, KeyError, TypeError, AttributeError):   # a non-object JSON reads as no record
+    except (OSError, ValueError):
         return None
+    if not isinstance(data, dict):
+        return None
+    return SharingConsentRecord(terms_hash=_text(data.get("terms_hash")), terms_version=_text(data.get("terms_version")),
+                                accepted_at=_text(data.get("accepted_at")), withdrawn_at=_text(data.get("withdrawn_at")))
 
 
 def in_force() -> bool:
-    """True unless the operator opted out (a withdrawn record). No record is the
-    default — sharing on. An unreadable record file reads as no record."""
+    """True only when the operator opted in: a record with an acceptance
+    (``accepted_at``) and no withdrawal. No record is the default — sharing off.
+    An unreadable or malformed record file reads as no record (off)."""
     record = current()
-    return record is None or not record.withdrawn_at
+    return record is not None and bool(record.accepted_at) and not record.withdrawn_at
+
+
+def sharing_on(cfg: Any) -> bool:
+    """Whether this node shares with the community graph right now: the build and the
+    operator's switch and a community graph (``cfg.community_enabled``) AND a consent in force
+    — the two checks the share gate makes. Every "is sharing on?" display reads this, so an
+    opt-out made with ``blackbox report --withdraw-consent`` never shows as on."""
+    return bool(getattr(cfg, "community_enabled", False)) and in_force()
 
 
 def why_not() -> str:
     """"" when consent is in force; otherwise ONE plain sentence saying why not —
-    never given, withdrawn, or given for an earlier text of the terms (which
-    is what every operator sees once after the terms change, Community
-    Curation C11). The share gates, `blackbox report --consent` and the
+    never turned on (the default), or turned off on a given day. The share gates, `blackbox report --consent` and the
     operator's health list all say it the same way. It never disagrees
     with :func:`in_force`: when that says yes, this says nothing."""
     if in_force():
         return ""
     entry = current()
-    day = entry.withdrawn_at[:10] if entry is not None else ""
-    return f"community sharing was turned off on {day} (`blackbox report --enable-sharing` or the dashboard toggle turns it back on)"
+    if entry is not None and entry.withdrawn_at:
+        return (f"community sharing was turned off on {entry.withdrawn_at[:10]} "
+                "(`blackbox report --enable-sharing` or the dashboard toggle turns it back on)")
+    return "community sharing is off — `blackbox report --enable-sharing` or the dashboard toggle turns it on"
 
 
 def changes_section(text: Optional[str] = None) -> str:
@@ -122,8 +145,8 @@ def changes_section(text: Optional[str] = None) -> str:
 
 
 def record() -> Optional[SharingConsentRecord]:
-    """Record acceptance of the terms as they are now — the opt-back-in after an
-    opt-out. Works without the terms file too (the record then names no version):
+    """Record acceptance of the terms as they are now — the operator's opt-in
+    (first time, or back in after an opt-out). Works without the terms file too (the record then names no version):
     turning sharing back on must never depend on it. None when it could not be saved."""
     text = terms_text()
     entry = SharingConsentRecord(terms_hash=terms_hash(text) if text else "", terms_version=terms_version(text) if text else "",
@@ -160,10 +183,10 @@ def withdraw() -> bool:
 
 
 def erase() -> bool:
-    """Identity erasure: drop the acceptance history and leave sharing OFF. An
-    erased identity must never restart sharing on its own (with no record the
-    default is ON), so the history is replaced by a bare opt-out; the operator
-    turns sharing back on deliberately. True when a record existed before."""
+    """Identity erasure: drop the acceptance history and leave sharing OFF. The
+    history is replaced by a bare opt-out (not deleted) so the record says the
+    operator chose off; the operator turns sharing back on deliberately. True
+    when a record existed before."""
     existed = _record_path().exists()
     _save(SharingConsentRecord(terms_hash="", terms_version="", accepted_at="",
                                withdrawn_at=datetime.now(UTC).replace(microsecond=0).isoformat()))

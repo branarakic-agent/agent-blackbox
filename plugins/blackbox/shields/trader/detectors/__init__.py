@@ -11,7 +11,7 @@ and ``verified`` itself, so the validators here check only what is theirs:
 * ``desktop-app`` (Exodus, Electrum) and ``cli-key-file`` (the Solana CLI): checked by
   :func:`.app_folder.validate_pack`, beside the matcher it serves.
 
-Detection (shields S4a): :func:`detect` answers, for one tool call, a finding per
+Detection: :func:`detect` answers, for one tool call, a finding per
 chosen pack whose key store the call reads — or copies or archives inside a folder
 handed whole to ``tar``/``zip``/``cp``/``rsync`` (:func:`wallets_inside_folder`, which
 needs to know where key stores exist on this machine: :data:`EXISTING_STORES`, a
@@ -76,13 +76,53 @@ def _ids(value: Any, pattern: re.Pattern[str], what: str) -> Optional[str]:
     return None
 
 
+#: ``availability`` states: the publisher ships it there and Blackbox guards it (``protected``),
+#: ships it under an id the pack does not list yet (``not-covered``), says it does not ship it
+#: (``not-offered``), or no official listing was found (``not-found``).
+AVAILABILITY_STATES = frozenset({"protected", "not-covered", "not-offered", "not-found"})
+_AVAILABILITY_FIELDS = frozenset({"store", "browsers", "state", "url", "source", "note"})
+#: The store whose "protected" entry needs the pack's ids for that engine.
+_STORE_ENGINE = {"Chrome Web Store": "chromium", "Edge Add-ons": "chromium", "Firefox Add-ons": "firefox"}
+
+
+def _check_availability(manifest: Mapping[str, Any]) -> Optional[str]:
+    """``availability``: where the publisher ships the extension and whether Blackbox guards it
+    there, with the source of each claim. Documentation data (detection never reads it), but a
+    "protected" entry must be backed by the pack's own ids for that engine."""
+    entries = manifest.get("availability")
+    if entries is None:
+        return None
+    if not isinstance(entries, list) or not entries:
+        return "availability must be a non-empty list of stores"
+    for entry in entries:
+        if not isinstance(entry, dict) or set(entry) - _AVAILABILITY_FIELDS:
+            return "an availability entry takes store, browsers, state, url, source and note only"
+        if not isinstance(entry.get("store"), str) or not entry["store"].strip():
+            return "an availability entry names its store"
+        browsers = entry.get("browsers")
+        if not isinstance(browsers, list) or not browsers or not all(isinstance(name, str) and name for name in browsers):
+            return "an availability entry lists its browsers"
+        if entry.get("state") not in AVAILABILITY_STATES:
+            return f"availability state must be one of {', '.join(sorted(AVAILABILITY_STATES))}"
+        if "url" in entry and not (isinstance(entry["url"], str) and entry["url"].startswith("https://")):
+            return "an availability url is an https link"
+        for text in ("source", "note"):
+            if text in entry and not (isinstance(entry[text], str) and 0 < len(entry[text]) <= 300):
+                return f"an availability {text} is text of at most 300 characters"
+        engine = _STORE_ENGINE.get(entry["store"])
+        if entry["state"] == "protected" and engine and not manifest["stores"].get(engine):
+            return f"availability says {entry['store']} is protected, but the pack lists no {engine} id"
+    return None
+
+
 def _check_browser_extension(manifest: Mapping[str, Any]) -> Optional[str]:
     stores = manifest.get("stores")
     if not isinstance(stores, dict) or set(stores) - {"chromium", "firefox"}:
         return "stores must be an object with chromium and/or firefox id lists"
-    problem = (_unknown_fields(manifest, frozenset({"stores"}))
+    problem = (_unknown_fields(manifest, frozenset({"stores", "availability"}))
                or _ids(stores.get("chromium", []), CHROMIUM_ID, "chromium")
-               or _ids(stores.get("firefox", []), FIREFOX_ID, "firefox"))
+               or _ids(stores.get("firefox", []), FIREFOX_ID, "firefox")
+               or _check_availability(manifest))
     if problem:
         return problem
     if not stores.get("chromium") and not stores.get("firefox"):

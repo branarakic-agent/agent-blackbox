@@ -11,5 +11,10 @@
     "~/Library/Application Support/Exodus/exodus.wallet",
     "%APPDATA%/Exodus/exodus.wallet"
   ],
-  "label": "Desktop app"
+  "label": "Desktop app",
+  "logo": {
+    "file": "logo.svg",
+    "terms": "NOTICE.md",
+    "source": "https://www.exodus.com/brand/dl/images/Exodus_symbol.svg"
+  }
 }

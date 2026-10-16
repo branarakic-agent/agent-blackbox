@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Dict
-from .. import audit, detection
+from .. import audit, detection, shields
 from ..kernel import threat_ids
 from ..kernel import constants
 from ..kernel.config import BlackboxConfig
@@ -26,9 +26,8 @@ def _spawn_osv_discovery(cfg: BlackboxConfig, rs: Any, tool_name: str, args: Any
 
     def _run() -> None:
         try:
-            findings = reporting._flag_worthy(
-                cfg, detection.discover_dependency_candidates(tool_name, args, rs, osv.lookup)
-            )
+            found = detection.discover_dependency_candidates(tool_name, args, rs, osv.lookup)
+            findings = reporting._flag_worthy(cfg, found, shields.snapshot()) if found else []   # one snapshot per task
             if findings:
                 reporting._report_and_audit(cfg, "osv_discovery", findings, {"tool_name": tool_name})
         except Exception as exc:  # pragma: no cover - fail open
@@ -66,7 +65,7 @@ def _spawn_llm_review(cfg: BlackboxConfig, text: str, detail: dict[str, Any]) ->
                 confirmed=False,
                 source="llm",
             )
-            worthy = reporting._flag_worthy(cfg, [finding])
+            worthy = reporting._flag_worthy(cfg, [finding], shields.snapshot())   # one snapshot per task
             if worthy:
                 review_detail = {**detail, "llm": True}
                 # Give the LLM finding the same context; when the pattern scan
@@ -129,10 +128,12 @@ def _auto_attach_due() -> bool:
 
 
 def _spawn_auto_attach(cfg: BlackboxConfig) -> None:
-    """Re-run the attach sweep on a daemon thread (throttled, fail-open).
+    """Re-run the attach sweep on a daemon thread (throttled, fail-open) — ONLY when the
+    operator opted in with ``auto_attach: true`` (default off: each Hermes profile is its
+    own trust and credential boundary, so Blackbox joins the ones the operator names).
 
-    Keeps protection current: a Hermes home or OpenClaw workspace created after
-    install gets attached the next time any protected agent starts a session.
+    Opted in, a Hermes home or OpenClaw workspace created after install gets attached the
+    next time any protected agent starts a session; one the operator switched off is skipped.
     """
     import threading
 

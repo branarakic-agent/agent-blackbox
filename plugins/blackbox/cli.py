@@ -19,7 +19,7 @@ from .kernel import health
 from .kernel import yaml_files
 from .kernel.config import load_blackbox_config
 from .kernel.dkg_client import DkgClient
-from .attach import cmd_attach, cmd_detach
+from .attach import add_attach_parsers
 from .chat import add_blackbox_chat_args, cmd_chat
 from .community import add_report_parser, print_community_status
 from .curate import add_curate_parser, status_health_items
@@ -76,21 +76,7 @@ def setup_cli(parser: argparse.ArgumentParser) -> None:
     )
     sync.set_defaults(func=cmd_sync)
 
-    attach_p = sub.add_parser(
-        "attach", help="Auto-protect every local Hermes home + OpenClaw workspace"
-    )
-    attach_p.add_argument("--dry-run", action="store_true", help="Show what would change; write nothing")
-    attach_p.add_argument("--hermes-only", action="store_true", help="Only attach to Hermes homes")
-    attach_p.add_argument("--openclaw-only", action="store_true", help="Only attach to OpenClaw workspaces")
-    attach_p.set_defaults(func=cmd_attach)
-
-    detach_p = sub.add_parser("detach", help="Disable Blackbox in every local agent")
-    detach_p.add_argument("--dry-run", action="store_true", help="Show what would change; write nothing")
-    detach_p.add_argument("--remove-files", action="store_true", help="Also delete copied plugin files")
-    detach_p.add_argument("--hermes-only", action="store_true", help="Only detach from Hermes homes")
-    detach_p.add_argument("--openclaw-only", action="store_true", help="Only detach from OpenClaw workspaces")
-    detach_p.set_defaults(func=cmd_detach)
-
+    add_attach_parsers(sub)
     add_report_parser(sub, compiled_community=lambda cfg: ruleset.peek(cfg).community)
     add_curate_parser(sub, compiled_ruleset=lambda cfg: ruleset.peek(cfg))
     dash = sub.add_parser("dashboard", help="Start the local Blackbox dashboard")

@@ -44,9 +44,10 @@ def test_every_registered_shield_is_in_the_fixture():
     assert sorted(in_fixture) == sorted(shield.id for shield in shields.all_shields())
 
 
-def test_five_supported_packs_carry_their_kind_data():
+def test_eleven_supported_packs_carry_their_kind_data():
     supported = {pack["id"]: pack for pack in _trader()["packs"] if pack["status"] == "supported"}
-    assert list(supported) == ["metamask", "phantom", "exodus", "electrum", "solana-cli"]
+    assert list(supported) == ["metamask", "phantom", "exodus", "electrum", "solana-cli",
+                               "rabby", "coinbase-wallet", "trust-wallet", "okx-wallet", "keplr", "solflare"]
     for pack_id in ("metamask", "phantom"):
         assert supported[pack_id]["kind"] == "browser-extension"
         assert supported[pack_id]["stores"]["chromium"] and supported[pack_id]["stores"]["firefox"]
@@ -66,9 +67,9 @@ def test_supported_pack_data_equals_the_loaded_manifests():
                          "order": pack.order, **pack.data}
 
 
-def test_six_planned_pack_ids_are_listed():
+def test_no_planned_pack_ids_are_left():
     planned = [pack["id"] for pack in _trader()["packs"] if pack["status"] == "planned"]
-    assert planned == ["rabby", "coinbase-wallet", "trust-wallet", "okx-wallet", "keplr", "solflare"]
+    assert planned == []   # the six were promoted to supported on 2026-10-16
 
 
 def test_all_31_browser_roots_are_listed_in_file_order():

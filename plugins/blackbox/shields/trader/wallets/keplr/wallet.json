@@ -2,6 +2,64 @@
   "id": "keplr",
   "name": "Keplr",
   "kind": "browser-extension",
-  "status": "planned",
-  "order": 150
+  "status": "supported",
+  "order": 150,
+  "verified": "2026-10-16",
+  "source": "Chrome Web Store install on Ubuntu 24.04, Chrome 155 (2026-10-16): the real extension wrote its storage under this id; addons.mozilla.org listing by the publisher, installed in Firefox 158 (2026-10-16)",
+  "stores": {
+    "chromium": [
+      "dmkamcknogkgcdfhhbddcghachkejeap"
+    ],
+    "firefox": [
+      "keplr-extension@keplr.app"
+    ]
+  },
+  "logo": {
+    "file": "logo.svg",
+    "terms": "NOTICE.md",
+    "source": "https://raw.githubusercontent.com/chainapsis/keplr-rainbow-connector/main/packages/rainbow-connector/src/assets/keplrWallet.svg"
+  },
+  "availability": [
+    {
+      "store": "Chrome Web Store",
+      "browsers": [
+        "Chrome",
+        "Brave",
+        "Edge",
+        "Opera",
+        "Vivaldi",
+        "Arc"
+      ],
+      "state": "protected",
+      "url": "https://chromewebstore.google.com/detail/dmkamcknogkgcdfhhbddcghachkejeap",
+      "source": "https://www.keplr.app/get"
+    },
+    {
+      "store": "Firefox Add-ons",
+      "browsers": [
+        "Firefox"
+      ],
+      "state": "protected",
+      "url": "https://addons.mozilla.org/firefox/addon/keplr/",
+      "source": "https://www.keplr.app/get"
+    },
+    {
+      "store": "Edge Add-ons",
+      "browsers": [
+        "Edge"
+      ],
+      "state": "not-covered",
+      "url": "https://microsoftedge.microsoft.com/addons/detail/ocodgmmffbkkeecmadcijjhkmeohinei",
+      "source": "https://www.keplr.app/get",
+      "note": "Keplr's own Edge build has its own id"
+    },
+    {
+      "store": "Safari",
+      "browsers": [
+        "Safari"
+      ],
+      "state": "not-offered",
+      "note": "No desktop Safari extension from the publisher"
+    }
+  ]
 }

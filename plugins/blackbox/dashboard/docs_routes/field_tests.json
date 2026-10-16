@@ -1,0 +1,47 @@
+{
+ "about": "Real-machine test runs of Blackbox (past events, written by hand; everything else on the Docs page is read live from the product). A run naming a shield is shown in that shield's section.",
+ "runs": [
+  {
+   "shield": "trader",
+   "title": "Fresh Linux machine, real browsers and wallets",
+   "date": "2026-10-16",
+   "machine": "Ubuntu 24.04, 2 vCPU, 8 GB, a non-root desktop user",
+   "setup": [
+    "Blackbox installed with the one-line installer (no Docker; the DKG-managed store)",
+    "Google Chrome from Google's .deb; Brave and Microsoft Edge from their own apt repositories; Chromium and Firefox as Ubuntu snaps",
+    "Wallet extensions installed from the official stores by each browser's own force-install policy",
+    "Electrum 4.8.2 AppImage from electrum.org with a real throwaway wallet; the Solana CLI from Anza's installer with a real key file; Exodus 26.10.7 from exodus.com"
+   ],
+   "results": [
+    "Blackbox's own discovery found every supported wallet: all 8 browser wallets in Chrome, Brave, Edge and Chromium; MetaMask, Phantom, Keplr and Solflare in Firefox; Exodus, Electrum and the Solana CLI",
+    "The whole attack table through the real pre-execution check, block mode, Trader Shield on for all 11 wallets: 84 of 84 rows as expected",
+    "Copying, archiving or searching the whole Chrome folder was blocked, naming all eight browser wallets inside it",
+    "The DKG node kept running after logout and came back by itself after a real reboot, with nobody logged in",
+    "Verified threat graph: 565 of 565 assets"
+   ],
+   "open": [
+    "Wallets created with keys inside the extensions (the tests used the storage each extension writes when it first starts)"
+   ]
+  },
+  {
+   "shield": "trader",
+   "title": "Fresh Mac, real Chrome and wallets",
+   "date": "2026-10-16",
+   "machine": "GitHub-hosted Mac, macOS 15, Apple Silicon",
+   "setup": [
+    "Blackbox installed with the one-line installer (no Docker)",
+    "Google Chrome, Brave, Microsoft Edge and Firefox; wallet extensions from the official stores by each browser's force-install policy",
+    "Electrum (real throwaway wallet), Exodus from exodus.com, the Solana CLI with a real key file"
+   ],
+   "results": [
+    "Install ready; the DKG node runs under its LaunchAgent and comes back after a login",
+    "Verified threat graph: 565 of 565 assets; the core attacks (wallet vault, protected file, malware package, prompt injection, a harmless command) all as expected",
+    "MetaMask and Phantom from the Chrome Web Store: both found and all 15 attacks on their real files as expected",
+    "Blackbox's discovery found 17 real wallet stores across Chrome, Brave, Edge, Firefox, Exodus, Electrum and the Solana CLI"
+   ],
+   "open": [
+    "Not every extension had finished downloading in the test window in Brave and Edge, so those were not all on disk to find"
+   ]
+  }
+ ]
+}

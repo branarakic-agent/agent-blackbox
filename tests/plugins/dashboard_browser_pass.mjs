@@ -2,9 +2,10 @@
  * Real-browser pass of the Blackbox dashboard (LES-002, KI-199) — the browser half.
  *
  * Opens the dashboard at desktop (1440) and phone (390) widths, lands, switches
- * to the Community tab, and writes one JSON summary per viewport: console
+ * to the Community tab, then opens every shield's own page (each card's `page`
+ * from /api/shields), and writes one JSON summary per viewport: console
  * errors, page errors, failed requests, horizontal overflow and the text of
- * the sections the Refine work added. `tests/plugins/test_blackbox_dashboard_browser.py`
+ * the sections the Refine work added (`shield-pages`: the pages it opened). `tests/plugins/test_blackbox_dashboard_browser.py`
  * serves a fixture app, runs this script and asserts on the summary.
  *
  *   PW_EXEC=<chromium binary> node tests/plugins/dashboard_browser_pass.mjs <base url> <out dir>
@@ -81,6 +82,23 @@ for (const vp of viewports) {
     await communityTab.click();
     await page.waitForTimeout(2500);
     checks.push(await overflow("community-tab"));
+  }
+  // Every shield's own page, in the same tab: its errors, failed requests and overflow count too.
+  // /api/shields is stale-while-revalidate, so a cold read can still be [] — ask until it fills.
+  sections["shield-pages"] = [];
+  let cards = [];
+  for (let i = 0; i < 20 && !cards.length; i++) {
+    cards = await page.evaluate(async () => (await fetch("/api/shields")).json());
+    if (!Array.isArray(cards)) cards = [];
+    if (!cards.length) await page.waitForTimeout(500);
+  }
+  for (const card of cards) {
+    if (typeof card.page !== "string" || !card.page.startsWith("/")) continue;
+    await page.goto(base + card.page, { waitUntil: "domcontentloaded", timeout: 30000 });
+    try { await page.waitForLoadState("networkidle", { timeout: 15000 }); } catch { /* the page polls */ }
+    await page.waitForTimeout(2000);
+    checks.push(await overflow(`shield-page ${card.page}`));
+    sections["shield-pages"].push(card.page);
   }
   summary.push({ viewport: vp, consoleErrors, pageErrors, failedRequests, checks, sections, spillingCells });
   await context.close();

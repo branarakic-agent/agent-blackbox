@@ -24,9 +24,8 @@ What is matched, built from each supported pack's ``stores`` (``wallets/<id>/wal
 Where the stores are laid out under one browser folder (for the archive check) depends
 on the folder's ``engine`` in ``browsers.json``: :meth:`BrowserExtensionMatcher.store_globs`.
 
-Moved here from ``detection/wallet_files.py`` (shields S4a), built from packs instead of
-the ``WALLETS`` rows; that copy stays wired to the old guard path until S4c and is
-deleted in S5b.
+Moved here from ``detection/wallet_files.py`` (since deleted), built from packs instead of
+its ``WALLETS`` rows.
 
 Pattern: Specification — a pack is data (ids); one matcher serves every pack added later.
 

@@ -403,7 +403,7 @@ def test_spawn_llm_review_records_local_finding(monkeypatch):
         llm_enabled=True, llm_provider="anthropic", llm_model="claude-x", llm_api_key="sk-ant"
     )
     monkeypatch.setattr(llm, "review_injection", lambda text, c: {"severity": "high", "reason": "override attempt"})
-    monkeypatch.setattr(guard_reporting, "_flag_worthy", lambda cfg, findings: findings)
+    monkeypatch.setattr(guard_reporting, "_flag_worthy", lambda cfg, findings, active: findings)
     recorded = []
     monkeypatch.setattr(guard_reporting, "_report_and_audit", lambda c, e, f, d: recorded.append((e, f, d)))
 

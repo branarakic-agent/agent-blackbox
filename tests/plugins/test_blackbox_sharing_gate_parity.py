@@ -1,8 +1,8 @@
 """The OpenClaw bridge and the Python plugin answer "may this machine share?"
 the same way (LES-029: a second implementation is only as current as its test).
 
-Sharing is on by default (2026-10-12) and off only after an opt-out; every
-malformed record reads as no record. The TypeScript half is
+Sharing is opt-in (2026-10-16): on only with an acceptance and no opt-out;
+every malformed record reads as no record (off). The TypeScript half is
 ``integrations/openclaw/test/sharing-gate-parity.mjs``.
 """
 
@@ -23,13 +23,17 @@ SCRIPT = REPO / "integrations" / "openclaw" / "test" / "sharing-gate-parity.mjs"
 
 #: Record-file contents (None = no file) and the answer both runtimes must give.
 CASES = [
-    (None, True),                                                                           # the default
+    (None, False),                                                                          # the default: off
     (json.dumps({"terms_hash": "a", "terms_version": "1.2", "accepted_at": "t", "withdrawn_at": ""}), True),
     (json.dumps({"terms_hash": "a", "terms_version": "1.2", "accepted_at": "t", "withdrawn_at": "2026-10-12"}), False),
     (json.dumps({"terms_hash": "", "terms_version": "", "accepted_at": "", "withdrawn_at": "2026-10-12"}), False),
     (json.dumps({"withdrawn_at": "2026-10-12"}), False),                                    # an opt-out missing other fields
     (json.dumps({"terms_hash": "old", "terms_version": "1.0", "accepted_at": "t", "withdrawn_at": ""}), True),  # old terms
-    ("{nope", True), ("[]", True), ('"text"', True), ("null", True),                        # malformed: no record
+    (json.dumps({"terms_hash": "a", "terms_version": "1.3", "accepted_at": "", "withdrawn_at": ""}), False),   # no acceptance
+    (json.dumps({"accepted_at": None, "withdrawn_at": None}), False),                       # null is no value
+    (json.dumps({"accepted_at": 1, "withdrawn_at": ""}), False),                            # a number is no value
+    (json.dumps({"accepted_at": "t"}), True),                                               # an acceptance alone
+    ("{nope", False), ("[]", False), ('"text"', False), ("null", False),                    # malformed: no record
 ]
 
 

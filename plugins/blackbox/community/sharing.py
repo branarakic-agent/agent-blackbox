@@ -92,7 +92,7 @@ class CommunitySharePolicy:
     def decide(self, finding: dict[str, Any], reporter: Optional[str]) -> tuple[bool, str]:
         if not self._cfg.community_enabled:
             return False, "community sharing disabled"
-        if not consent.in_force():   # R13: opt-in, bound to the terms' content, withdrawable
+        if not consent.in_force():   # R13: opt-in (a recorded acceptance), withdrawable
             return False, consent.why_not()
         if finding.get("source") in NEVER_SHARED_SOURCES:
             return False, f"source {finding.get('source')} never leaves the machine"

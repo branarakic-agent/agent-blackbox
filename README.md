@@ -22,7 +22,7 @@ community threat intelligence, and flags or blocks it before damage is done.
 | **Catches** | prompt injection, dangerous commands, sensitive-file access, secret exposure, malicious packages, unsafe skills, known-bad indicators |
 | **Learns from** | Umanitek's **verified graph** on the OriginTrail DKG: its verified rules (may block) and the open **community reports** in its shared memory (flag only) |
 | **Shows** | every finding in a local dashboard and audit trail |
-| **Shares** | signed, privacy-safe threat statements into the graph's shared memory — on by default, one command to turn off (`blackbox report --disable-sharing`) |
+| **Shares** | signed, privacy-safe threat statements into the graph's shared memory — opt-in: off until you turn it on (`blackbox report --enable-sharing`) |
 
 _This README documents the mainline as of 2026-10-14. The file inventory below is generated from the code (`scripts/blackbox-readme-inventory.py`)._
 
@@ -156,12 +156,12 @@ bash blackbox-install.sh
 | `blackbox attach` / `detach` | protect every local agent at once / turn it off |
 | `blackbox setup-llm` | optional second-opinion LLM reviewer for prompt injection (flags only, verdicts stay local) |
 
-### Community reports (sharing is on by default)
+### Community reports (sharing is opt-in)
 
 | Command | What it does |
 |---|---|
+| `blackbox report --enable-sharing` | turn sharing on (records your agreement to the reporter terms; nothing else does) |
 | `blackbox report --disable-sharing` | sharing stops on the next action; retractions still work |
-| `blackbox report --enable-sharing` | sharing back on |
 | `blackbox report --consent` | read the reporter terms |
 | `blackbox report --type ioc --ioc-type domain --value evil.example --context fetched-by-tool --severity high` | file a report by hand (same gates, signer and ledger as automatic sharing) |
 | `blackbox report --status` | every report you shared: outcome, current stage and reason |
@@ -369,7 +369,7 @@ injection report carries only a hash of its pattern and never is. A promotion is
 can remove or change it, and erasing an identity does not reach it. Anyone can see which report a
 verified rule came from, and so its reporter. Only the curators can stop it counting, with a
 revocation or a correction; a retraction stops only the report. Publishing the report itself next to
-the rule is built but switched off until the DKG can carry it. The reporter terms (version 1.4) say
+the rule is built but switched off until the DKG can carry it. The reporter terms (version 1.5) say
 all of this before anyone shares.
 
 **When both have spoken, the most restrictive word wins** (today only the verified authority
@@ -523,17 +523,18 @@ modifies another DKG installation.
 | Verified rules, promotions of community reports among them | Verified Memory | Umanitek's curator only | may block |
 | Community reports, sub-graph `reports` | shared memory | every sharing node, signed | flags only |
 
-**Modules** (`plugins/blackbox/`, thirteen feature modules and one kernel)
+**Modules** (`plugins/blackbox/`, fourteen feature modules and one kernel)
 
 | Module | Owns | May depend on |
 |---|---|---|
 | `guard` | the five Hermes hooks, the flag/block decision, automatic sharing, the kill-list check | `kernel`, `attach`, `audit`, `community`, `detection`, `ruleset`, `killlist`, `overrides`, `shields` |
-| `detection` | pure detectors, action parsing, content scanners, protected paths, wallet and token-approval checks, OSV lookups, the optional LLM reviewer | `kernel`, `attach` |
-| `shields` | opt-in protection packs: the shield contract and pack loader; Trader Shield's wallets, browser folders and setting | `kernel`, `detection`, `audit` |
+| `detection` | pure detectors, action parsing, content scanners, protected paths, secret and token-approval checks, OSV lookups, the optional LLM reviewer | `kernel`, `attach` |
+| `shields` | opt-in protection packs ([how they are built](plugins/blackbox/shields/README.md)): the registry, the shield contract and pack loader; Trader Shield's wallets and browser folders as data, its setting, card, events and page | `kernel`, `detection`, `audit` |
 | `ruleset` | compiling verified, community and curator tiers into O(1) lookups; refresh; the pulse | `kernel`, `community`, `killlist` |
 | `community` | report schema, builder, signer, consent, share gate, stages, statements, keep-alive, retry, reputation, allowlist, shadow, membership, `blackbox report` | `kernel`, `audit`, `detection` |
 | `sync` | the managed DKG node and the verified-graph catch-up; `blackbox sync` | `kernel`, `ruleset`, `community` |
 | `audit` | local findings and activity logs, the share ledger, the private audit record | `kernel` |
+| `setup` | `blackbox setup`: the full install after a Hermes plugin-catalog install (the bundled installer in setup-only mode, the pinned DKG release) | `kernel` |
 | `dashboard` | the loopback web UI and its API | `kernel`, `attach`, `audit`, `community`, `detection`, `ruleset`, `sync`, `shields` |
 | `attach` | finding and wiring Hermes homes and OpenClaw workspaces | `kernel` |
 | `overrides` | the local release valve, `blackbox rules` | `kernel` |
@@ -894,8 +895,6 @@ Click a module to open its file list.
 | `lifecycle.py` | Startup and shutdown hooks for the dashboard app, without FastAPI's deprecated ``on_event`` |
 | `network_sync.py` | The command line the dashboard runs for its verified-graph sync |
 | `node_probe.py` | The dashboard's probes of the local DKG node: is it answering, and how is its sync |
-| `protection/__init__.py` | The dashboard's wallet-protection panel: what Blackbox found to protect, and how (trader rules) |
-| `protection/events.py` | Trader Shield's full event report: every wallet event, with the session around it (local only) |
 | `pulse_driver.py` | The community pulse keeps beating while the dashboard runs, browser or not (KI-283) |
 | `safe_payloads.py` | Making community- and graph-derived values safe to serve (the dashboard's one sanitizer) |
 | `server.py` | Standalone Blackbox dashboard — a tiny FastAPI app bound to loopback |
@@ -1234,7 +1233,7 @@ environment override, for example `BLACKBOX_MODE` or `BLACKBOX_REPORT`.
 | `dkg_home` | `<agent-blackbox>/.dkg` | isolated DKG node config, token, pid and cache |
 | `context_graph_id` | `0x37b1Fdfd…/agent-blackbox-vm` | the threat graph: verified rules in its Verified Memory, community reports in its shared memory |
 | `graph_peer_id` | bundled publisher peer | the publisher's node: dialled before the subscription and kept connected; community reports reach the node over that link, and the catch-up asks it first |
-| `report` | `true` | share privacy-safe reports into the graph's shared memory (on by default; `blackbox report --disable-sharing` turns it off) |
+| `report` | `false` | share privacy-safe reports into the graph's shared memory (opt-in; `blackbox report --enable-sharing` turns it on, `--disable-sharing` off) |
 | `report_min_severity` | `high` | lowest severity a built-in discovery candidate must reach to be flagged or shared |
 | `daily_report_limit` | `100` | cap on outbound reports per day; never "no cap" |
 | `community_poll_interval` | `20` | seconds between community pulses (0 off) |
@@ -1258,13 +1257,13 @@ its log.
 
 ## Privacy and your rights
 
-Sharing is privacy by design: a report has no field that could carry a prompt, command, path or file, and secrets never leave. It is on by default and one command turns it off. The reporter terms, the data-protection impact assessment
+Sharing is privacy by design: a report has no field that could carry a prompt, command, path or file, and secrets never leave. It is off until you turn it on (opt-in), and one command turns it off again. The reporter terms, the data-protection impact assessment
 and the controller map ship in `plugins/blackbox/docs/`.
 
 | Right | Command | What actually happens |
 |---|---|---|
 | Objection | `blackbox report --disable-sharing` | automatic sharing, manual reports, keep-alive, retries and digests stop on the next action |
-| Information | `blackbox report --consent` | shows the reporter terms; sharing is on by default under them |
+| Information | `blackbox report --consent` | shows the reporter terms you agree to when you turn sharing on |
 | Access and portability | `blackbox report --export FILE` | key backup, share ledger, consent record, keep-alive memory, retry queue, sighting tally, as JSON |
 | Rectification | `--retract`, `--false-positive` | always allowed, even with sharing off; stops a statement counting on every current reader |
 | Erasure | `blackbox report --erase-identity --confirm` | destroys the signing key, ledger, keep-alive memory, retry queue, sharing record and tally; sharing stays off afterwards |

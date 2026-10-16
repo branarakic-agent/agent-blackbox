@@ -329,7 +329,7 @@ const NEVER_SHARED_SOURCES = new Set(["custom", "llm", "secret"]);
 function shareDecision(rt: BlackboxRuntime, finding: Finding, reporter: string | undefined,
                        evidence: Record<string, string | undefined>): [boolean, string] {
   if (!rt.cfg.report || !rt.cfg.communityGraphId) return [false, "community sharing disabled"];
-  if (!sharingConsentInForce(rt.cfg.blackboxHome)) return [false, "community sharing was turned off on this machine (`blackbox report --enable-sharing` turns it back on)"];
+  if (!sharingConsentInForce(rt.cfg.blackboxHome)) return [false, "community sharing is not turned on on this machine (`blackbox report --enable-sharing` turns it on)"];
   if (NEVER_SHARED_SOURCES.has(finding.source)) return [false, `source ${finding.source} never leaves the machine`];
   if ((finding.kind ?? finding.fields.kind) === "vulnerability" || (finding.category === "dependency" && (finding.kind ?? finding.fields.kind) !== "malware")) {
     return [false, "vulnerability findings stay in the local audit (decision 22)"];

@@ -1,8 +1,7 @@
 {
   "_comment": "Baselined when the structure guard landed (2026-10-01). Numbers may only shrink: lower them in the commit that shrinks the code; delete an entry once it is under the alarm. Never raise one. HEADROOM BUDGET (2026-10-11) for files under the alarm that new curator work will grow — they may NOT be added here; a feature commit may not carry any past 400 lines, so an extraction (own commit, suite green) lands first: curate/service/beat.py 23 lines left (377), ruleset/compiler.py 51 (349), curate/verbs.py 68 (332), community/trust/authority_read.py 138 (262), kernel/signing/key_manifest.py 147 (253).",
   "files": {
-    "dashboard/server.py": 1975,
-    "guard/hooks.py": 406,
+    "dashboard/server.py": 1941,
     "kernel/config.py": 424,
     "kernel/dkg_client.py": 639,
     "sync/command.py": 1397
@@ -14,7 +13,7 @@
     "attach/openclaw_discovery.py::discover_openclaw_workspaces": 67,
     "attach/openclaw_json5.py::_json5_to_json": 156,
     "audit/activity.py::read_local_activity": 129,
-    "cli.py::setup_cli": 78,
+    "cli.py::setup_cli": 64,
     "community/report_cli/report_command.py::cmd_report": 57,
     "curate/catalog_import.py::_entry_to_threat": 114,
     "dashboard/command.py::_replace_existing_dashboard": 65,
@@ -23,7 +22,7 @@
     "dashboard/server.py::_profile_activity_state": 61,
     "dashboard/server.py::_sync_activity": 271,
     "dashboard/server.py::_sync_ruleset_once": 63,
-    "dashboard/server.py::create_app": 1181,
+    "dashboard/server.py::create_app": 1139,
     "dashboard/server.py::create_app._blackbox_runtime_loop": 87,
     "dashboard/server.py::create_app._ruleset_sync_loop": 48,
     "dashboard/server.py::create_app.agents": 166,
@@ -47,7 +46,7 @@
     "sync/command.py::_catchup_authoritative_vm": 463,
     "sync/command.py::_cmd_sync_impl": 622,
     "sync/managed_node.py::_managed_dkg_node_executable": 40,
-    "sync/managed_node.py::_restart_managed_dkg": 82,
+    "sync/managed_node.py::_restart_managed_dkg": 43,
     "sync/progress.py::read_durable_progress": 62
   }
 }

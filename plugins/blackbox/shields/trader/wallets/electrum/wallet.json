@@ -14,5 +14,10 @@
     "%LOCALAPPDATA%/Electrum/wallets",
     "%LOCALAPPDATA%/Electrum/*/wallets"
   ],
-  "label": "Desktop app"
+  "label": "Desktop app",
+  "logo": {
+    "file": "logo.svg",
+    "terms": "NOTICE.md",
+    "source": "https://electrum.org/logo/electrum_logo_color.svg"
+  }
 }

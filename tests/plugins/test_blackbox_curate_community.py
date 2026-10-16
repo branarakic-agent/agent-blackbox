@@ -14,6 +14,7 @@ import time
 from datetime import date
 
 import pytest
+from _clock import utc_today
 from _community_rows import GRAPH, NETWORK, Reporter
 from _machines import SWM, VM, Machine, Network, Node
 
@@ -284,8 +285,8 @@ def test_a_sandbox_manifest_needs_one_operator_per_distinct_key(tmp_path, monkey
 def test_a_community_listing_counts_for_at_most_90_days_whatever_it_states(tmp_path, monkeypatch):
     team = Curators(tmp_path, monkeypatch)
     alice = Reporter("0xa")
-    team.two_key(Kind.COUNTED_AUTHORS, f"author:{alice.author}", _listing(alice, expires=(date.today().replace(year=date.today().year + 1)).isoformat()))
-    signed = date.today()
+    team.two_key(Kind.COUNTED_AUTHORS, f"author:{alice.author}", _listing(alice, expires=(utc_today().replace(year=utc_today().year + 1)).isoformat()))
+    signed = utc_today()
     with team.reader:
         for days, counted in ((0, True), (cv.COMMUNITY_LISTING_MAX_DAYS, True), (cv.COMMUNITY_LISTING_MAX_DAYS + 1, False)):
             day = date.fromordinal(signed.toordinal() + days).isoformat()

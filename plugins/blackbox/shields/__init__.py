@@ -9,8 +9,9 @@ every shield and apply the rules no shield may opt out of:
   behalf — a mode is read only by the shield's own ``mode()``, only in ``snapshot()``
   and the dashboard views.
 * ``check()`` runs every ENABLED shield's ``detect`` and marks each finding
-  ``source="secret"`` (local only: the community gate refuses that source), and a
-  shield whose ``detect`` raises contributes nothing (fail-open, WARNING).
+  ``source="secret"`` (local only: the community gate refuses that source); a finding
+  whose ``fields["pack"]`` names no pack of its shield is dropped, and a shield whose
+  ``detect`` raises contributes nothing (fail-open, WARNING each).
 * ``allows()`` is the gate: a finding no shield claims is always allowed; a claimed
   one only while that shield is enabled and its ``allows`` agrees. A shield whose
   ``claims`` or ``allows`` raises is read as "claims and refuses" — opt-in
@@ -36,18 +37,22 @@ from typing import Any, Iterable, Mapping, Optional
 from ..detection import Finding
 from ..kernel.settings import SettingsValidator
 from .contract import (
+    BrowserRoot,
+    Pack,
     Shield,
     ShieldEvent,
     ShieldMode,
     ShieldsSnapshot,
     ShieldStatus,
 )
-from .packs import ShieldData, load_shield_data
+from .packs import TABLE_MAX_BYTES, ShieldData, load_shield_data, read_json_file
 from . import trader
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "BrowserRoot",
+    "Pack",
     "Shield",
     "ShieldEvent",
     "ShieldMode",
@@ -55,9 +60,12 @@ __all__ = [
     "ShieldsSnapshot",
     "all_shields",
     "allows",
+    "attack_table",
+    "browser_roots",
     "check",
     "events",
     "get",
+    "loaded_packs",
     "pack_logo",
     "settings_validators",
     "settings_view",
@@ -67,6 +75,9 @@ __all__ = [
 
 #: Every registered shield, in registration order. Registering one is one line here.
 _SHIELDS: tuple[Shield, ...] = (trader.TRADER,)
+
+#: The block threshold an attack table is tested at when it names none (Blackbox's default).
+DEFAULT_TESTED_SEVERITY = "critical"
 
 #: The finding source every shield finding carries: never shared (community.NEVER_SHARED_SOURCES).
 LOCAL_ONLY_SOURCE = "secret"
@@ -85,6 +96,9 @@ def _load_all(shields: Iterable[Shield]) -> dict[str, ShieldData]:
 
 
 _DATA: dict[str, ShieldData] = _load_all(_SHIELDS)
+#: Every pack id each shield loaded: a finding's ``fields["pack"]`` must be one of its shield's.
+_PACK_IDS: dict[str, frozenset[str]] = {shield_id: frozenset(pack.id for pack in data.packs)
+                                        for shield_id, data in _DATA.items()}
 
 
 def all_shields() -> tuple[Shield, ...]:
@@ -111,7 +125,8 @@ def snapshot() -> ShieldsSnapshot:
 
 
 def check(tool_name: str, args: Any, active: ShieldsSnapshot) -> list[Finding]:
-    """Every enabled shield's own findings for this call, each marked local-only."""
+    """Every enabled shield's own findings for this call, each marked local-only; a finding
+    naming a pack its shield does not have is a detector fault and is dropped."""
     findings: list[Finding] = []
     for shield, mode in active.entries:
         if not mode.enabled:
@@ -122,6 +137,11 @@ def check(tool_name: str, args: Any, active: ShieldsSnapshot) -> list[Finding]:
             logger.warning("blackbox: shield %s detect failed: %s", shield.id, exc)
             continue
         for finding in raised:
+            pack = finding.fields.get("pack")
+            if pack is not None and pack not in _PACK_IDS.get(shield.id, frozenset()):
+                logger.warning("blackbox: shield %s finding %s names unknown pack %r; dropped",
+                               shield.id, finding.identifier, pack)
+                continue
             if finding.source != LOCAL_ONLY_SOURCE:
                 logger.warning("blackbox: shield %s finding %s had source %r; made local-only",
                                shield.id, finding.identifier, finding.source)
@@ -171,3 +191,46 @@ def pack_logo(shield_id: str, pack_id: str) -> Optional[Path]:
     if pack is None or pack.status == "unavailable" or pack.logo is None:
         return None
     return pack.folder / pack.logo.file
+
+
+def loaded_packs(shield_id: str) -> tuple[Pack, ...]:
+    """Every pack *shield_id* loaded, in display order (unavailable ones included, with their
+    reason); empty for an unknown id."""
+    data = _DATA.get(shield_id)
+    return data.packs if data else ()
+
+
+def browser_roots(shield_id: str) -> tuple[BrowserRoot, ...]:
+    """Every browser folder rule *shield_id* loaded from its ``browsers.json``, in file order
+    (a bad entry was dropped with a health reason); empty for an unknown id or a shield with none."""
+    data = _DATA.get(shield_id)
+    return data.roots if data else ()
+
+
+def attack_table(shield_id: str) -> Optional[dict[str, Any]]:
+    """*shield_id*'s tested attack table as its page reads it; None for an unknown id.
+
+    The rows, groups and evidence levels are the hand-written ``attacks.json``; what the
+    table is tested ON is composed here from the registry, never typed:
+    ``systems`` — every supported pack (``logo``: whether it ships one) then every
+    capability — and ``tested_with``, the setup sentence the test suite runs under
+    (every supported pack chosen, block mode at the table's ``tested_severity``).
+    Raises :class:`~.packs.PackError` when the file breaks the shield-file rules.
+    """
+    shield = get(shield_id)
+    if shield is None:
+        return None
+    table = read_json_file(shield.attacks, inside=shield.folder, max_bytes=TABLE_MAX_BYTES)
+    supported = [pack for pack in loaded_packs(shield_id) if pack.status == "supported"]
+    systems = [{"id": pack.id, "name": pack.name, "logo": pack.logo is not None} for pack in supported]
+    systems += [{"id": item.id, "name": item.name, "note": item.note, "logo": False} for item in shield.capabilities]
+    severity = table.get("tested_severity", DEFAULT_TESTED_SEVERITY)
+    tested_with = f"{shield.name} on for {_spoken_list([pack.name for pack in supported])}, block mode, block at {severity}"
+    return {**table, "systems": systems, "tested_with": tested_with}
+
+
+def _spoken_list(names: list[str]) -> str:
+    """*names* as a sentence lists them: "A", "A and B", "A, B and C" ("no pack" when empty)."""
+    if len(names) < 2:
+        return "".join(names) or "no pack"
+    return ", ".join(names[:-1]) + " and " + names[-1]

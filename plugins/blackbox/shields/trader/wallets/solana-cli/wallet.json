@@ -15,5 +15,10 @@
     "key": "keypair_path",
     "max_bytes": 65536
   },
-  "label": "Command line"
+  "label": "Command line",
+  "logo": {
+    "file": "logo.svg",
+    "terms": "NOTICE.md",
+    "source": "https://solana.com/src/img/branding/solanaLogoMark.svg"
+  }
 }

@@ -475,7 +475,8 @@ def test_dashboard_does_not_position_private_storage_as_normal_product_behavior(
         assert unwanted not in html
 
     assert "Record findings without blocking agent actions." in html
-    assert "Your prompts, commands and files never leave this machine. Switch off any time." in html
+    assert "Off until you turn it on." in html
+    assert "Your prompts, commands and files never leave this machine." in html
 
 
 def test_dashboard_more_node_is_a_display_only_marker():

@@ -22,6 +22,8 @@ audit = load_blackbox("audit")
 hooks = load_blackbox("guard.hooks")
 guard_background = load_blackbox("guard.background")
 guard_reporting = load_blackbox("guard.reporting")
+#: No shield claims these tests' findings: the category and tier policy alone decides.
+NO_SHIELDS = load_blackbox("shields").ShieldsSnapshot()
 config_mod = load_blackbox("kernel.config")
 cli = load_blackbox("cli")
 catalog_import = load_blackbox("curate.catalog_import")
@@ -546,20 +548,20 @@ def _finding(source, severity):
 
 def test_flag_worthy_drops_heuristic_below_report_min_severity():
     cfg = config_mod.BlackboxConfig()  # report_min_severity defaults to "high"
-    kept = guard_reporting._flag_worthy(cfg, [_finding("heuristic", "medium")])
+    kept = guard_reporting._flag_worthy(cfg, [_finding("heuristic", "medium")], NO_SHIELDS)
     assert kept == []
 
 
 def test_flag_worthy_keeps_heuristic_at_or_above_threshold():
     cfg = config_mod.BlackboxConfig()
-    kept = guard_reporting._flag_worthy(cfg, [_finding("heuristic", "high"), _finding("heuristic", "critical")])
+    kept = guard_reporting._flag_worthy(cfg, [_finding("heuristic", "high"), _finding("heuristic", "critical")], NO_SHIELDS)
     assert len(kept) == 2
 
 
 def test_flag_worthy_keeps_graph_findings_regardless_of_severity():
     cfg = config_mod.BlackboxConfig()
     findings = [_finding("community", "info"), _finding("public", "low")]
-    kept = guard_reporting._flag_worthy(cfg, findings)
+    kept = guard_reporting._flag_worthy(cfg, findings, NO_SHIELDS)
     assert kept == findings
 
 

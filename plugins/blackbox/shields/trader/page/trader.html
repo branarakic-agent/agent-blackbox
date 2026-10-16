@@ -1,0 +1,584 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Trader Shield · Agent Blackbox</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect x='8' y='8' width='48' height='48' rx='13' fill='%230B0B0D' stroke='%23F1EFE9' stroke-width='5'/%3E%3Ccircle cx='32' cy='32' r='8' fill='%23FF4F00'/%3E%3C/svg%3E" />
+<meta name="theme-color" content="#0B0B0D" id="theme-color" />
+<script>
+  // Same appearance as the dashboard (its saved preference), applied before paint.
+  (function () {
+    var preference = "system";
+    try {
+      var saved = localStorage.getItem("blackbox.dashboard.theme.v1");
+      if (saved === "light" || saved === "dark" || saved === "system") preference = saved;
+    } catch (_) {}
+    var resolved = preference === "system"
+      ? (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark")
+      : preference;
+    document.documentElement.setAttribute("data-theme", resolved);
+    document.documentElement.style.colorScheme = resolved;
+    var tc = document.getElementById("theme-color");
+    if (tc) tc.setAttribute("content", resolved === "light" ? "#F5F3EE" : "#0B0B0D");
+  })();
+</script>
+<style>
+  /* Self-hosted brand faces, as on the dashboard: no outbound requests, works offline. */
+  @font-face { font-family: "Archivo"; font-style: normal; font-weight: 400 900; font-stretch: 75% 125%; font-display: swap;
+    src: url("/fonts/archivo-latin.woff2") format("woff2"); }
+  @font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400; font-display: swap;
+    src: url("/fonts/ibm-plex-mono-400-latin.woff2") format("woff2"); }
+  @font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 600; font-display: swap;
+    src: url("/fonts/ibm-plex-mono-600-latin.woff2") format("woff2"); }
+
+  :root {
+    --bg: #0B0B0D; --panel: #131316; --elevated: #18181C; --border: #232329; --border-strong: #47464D;
+    --text: #F1EFE9; --muted: #99979A; --muted-strong: #BBB8B1;
+    --signal: #FF4F00; --signal-soft: rgba(255,79,0,0.11); --signal-glow: rgba(255,79,0,0.35);
+    --ok: #80CA9C; --ok-soft: rgba(128,202,156,0.12); --warn: #E3B341; --warn-soft: rgba(227,179,65,0.12);
+    --shield: rgba(255,79,0,0.16); --shield-edge: rgba(255,79,0,0.55);
+    --body: "Archivo", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+    --radius: 4px;
+  }
+  :root[data-theme="light"] {
+    --bg: #F5F3EE; --panel: #FFFFFF; --elevated: #ECE9E2; --border: #D7D2C9; --border-strong: #8E8980;
+    --text: #171719; --muted: #6D6963; --muted-strong: #484540;
+    --signal: #C63C00; --signal-soft: rgba(198,60,0,0.10); --signal-glow: rgba(198,60,0,0.25);
+    --ok: #2E7D4F; --ok-soft: rgba(46,125,79,0.10); --warn: #9A6512; --warn-soft: rgba(154,101,18,0.10);
+    --shield: rgba(198,60,0,0.10); --shield-edge: rgba(198,60,0,0.45);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--body); font-size: 16px; line-height: 1.55;
+    padding-inline: 16px; padding-block: 0 80px; -webkit-font-smoothing: antialiased; }
+  a { color: inherit; }
+  .wrap { max-width: 1080px; margin: 0 auto; display: grid; gap: 88px; }
+  .wrap > * { min-width: 0; }   /* a section never widens the page past the screen */
+  .mono { font-family: var(--mono); }
+  .eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--signal); }
+  h1, h2, h3 { margin: 0; text-wrap: balance; font-stretch: 112%; letter-spacing: -.01em; }
+  h1 { font-size: clamp(40px, 7vw, 76px); line-height: .98; font-weight: 900; text-transform: uppercase; }
+  h2 { font-size: clamp(28px, 4vw, 42px); line-height: 1.05; font-weight: 850; text-transform: uppercase; }
+  h3 { font-size: 18px; font-weight: 750; }
+  p { margin: 0; max-width: 64ch; }
+  .muted { color: var(--muted); }
+  section { display: grid; gap: 22px; }
+
+  /* top bar */
+  .top { display: flex; justify-content: space-between; align-items: center; padding-block: 22px; max-width: 1080px; margin: 0 auto; }
+  .brand { font-weight: 900; font-stretch: 125%; letter-spacing: .02em; text-decoration: none; display: inline-flex; align-items: center; font-size: 22px; }
+  .dot { width: .58em; height: .58em; border-radius: 50%; background: var(--signal); display: inline-block; margin: 0 .06em; }
+  .back { font-family: var(--mono); font-size: 13px; color: var(--muted); text-decoration: none; border: 1px solid var(--border); padding: 7px 12px; border-radius: var(--radius); }
+  .back:hover, .back:focus-visible { color: var(--text); border-color: var(--border-strong); outline: none; }
+
+  /* hero */
+  .hero { display: grid; grid-template-columns: 1.05fr 1fr; gap: 40px; align-items: center; padding-top: 24px; }
+  .hero-copy { display: grid; gap: 20px; }
+  .beta { display: inline-flex; gap: 8px; align-items: center; font-family: var(--mono); font-size: 12px; letter-spacing: .1em; text-transform: uppercase;
+    border: 1px solid var(--shield-edge); color: var(--signal); padding: 5px 10px; border-radius: 999px; width: max-content; }
+  .beta i { width: 7px; height: 7px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 0 0 var(--signal-glow); animation: pulse 2.4s infinite; }
+  .lead { font-size: 19px; color: var(--muted-strong); }
+  .cta-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .btn { font-family: var(--body); font-weight: 750; font-size: 15px; border-radius: var(--radius); padding: 12px 18px; cursor: pointer; border: 1px solid transparent; text-decoration: none; display: inline-flex; align-items: center; gap: 8px; }
+  .btn.primary { background: var(--signal); color: #fff; }
+  .btn.primary:hover { filter: brightness(1.08); }
+  .btn.ghost { background: transparent; color: var(--text); border-color: var(--border-strong); }
+  .btn:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+  .btn[disabled] { opacity: .55; cursor: default; }
+
+  /* the 3D stack: agent → shield → wallet */
+  /* Clip sideways only (no phone scroll); the tilted top layer must keep its corners on desktop. */
+  .stage { perspective: 1100px; height: 420px; display: grid; place-items: center; overflow-x: clip; overflow-y: visible; }
+  .stack { position: relative; width: min(360px, 57%);   /* of its column: tilted, it spans ~1.7x this */ aspect-ratio: 6 / 5;   /* keeps its shape as it shrinks: a fixed height widened the tilt on phones */ transform-style: preserve-3d; transform: rotateX(58deg) rotateZ(-38deg); animation: drift 14s ease-in-out infinite; }
+  .plane { position: absolute; inset: 0; border-radius: 10px; display: grid; place-items: center; transform-style: preserve-3d; }
+  .p-wallet { transform: translateZ(0); background: var(--elevated); border: 1px solid var(--border-strong); }
+  .p-wallet::after { content: ""; position: absolute; width: 74px; height: 74px; border-radius: 14px; border: 2px solid var(--muted-strong); background:
+      radial-gradient(circle at 50% 42%, var(--muted-strong) 0 9px, transparent 10px), linear-gradient(var(--panel), var(--panel)); }
+  .p-shield { transform: translateZ(90px); background: var(--shield); border: 1px solid var(--shield-edge);
+    box-shadow: 0 0 60px var(--signal-glow), inset 0 0 40px var(--signal-soft); }
+  .p-shield::before { content: ""; position: absolute; inset: 22px; border-radius: 8px; border: 1px dashed var(--shield-edge); animation: scan 3.2s linear infinite; }
+  .p-agent { transform: translateZ(180px); background: transparent; border: 1px solid var(--border-strong); }
+  .p-agent::after { content: ""; position: absolute; width: 46px; height: 46px; border-radius: 50%; border: 2px solid var(--text); }
+  .bolt { position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 16px var(--signal);
+    transform: translateZ(180px); animation: bolt 3.6s cubic-bezier(.4,.1,.3,1) infinite; }
+  .bolt.two { animation-delay: 1.8s; background: var(--ok); box-shadow: 0 0 14px var(--ok); animation-name: pass; }
+  @keyframes bolt { 0% { transform: translateZ(180px) scale(1); opacity: 0; } 10% { opacity: 1; }
+    45% { transform: translateZ(96px) scale(1.4); opacity: 1; } 55% { transform: translateZ(140px) scale(.6); opacity: .6; } 100% { transform: translateZ(200px) scale(.2); opacity: 0; } }
+  @keyframes pass { 0% { transform: translate3d(70px,-60px,180px); opacity: 0; } 15% { opacity: 1; } 100% { transform: translate3d(150px,-120px,180px); opacity: 0; } }
+  @keyframes drift { 0%,100% { transform: rotateX(58deg) rotateZ(-38deg); } 50% { transform: rotateX(54deg) rotateZ(-30deg); } }
+  @keyframes scan { 0% { inset: 22px; opacity: .9; } 100% { inset: -10px; opacity: 0; } }
+  @keyframes pulse { 0% { box-shadow: 0 0 0 0 var(--signal-glow); } 70% { box-shadow: 0 0 0 8px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .legend b { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; vertical-align: 0; }
+
+  /* live status */
+  .status { border: 1px solid var(--border); background: var(--panel); border-radius: var(--radius); padding: 16px 18px; display: flex; flex-wrap: wrap; gap: 10px 22px; align-items: center; }
+  .status .state { font-family: var(--mono); font-weight: 600; font-size: 13px; letter-spacing: .08em; text-transform: uppercase; }
+  .status .state.on { color: var(--ok); } .status .state.off { color: var(--muted-strong); }
+  .status .detail { color: var(--muted); font-size: 14px; }
+
+  /* how it works: animated pipeline */
+  .flow { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; counter-reset: step; }
+  .fstep { position: relative; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 14px 18px; display: grid; gap: 8px; align-content: start;
+    transition: border-color .4s ease, transform .4s ease, box-shadow .4s ease; }
+  .fstep .k { font-family: var(--mono); font-size: 11px; letter-spacing: .1em; color: var(--muted); text-transform: uppercase; }
+  .fstep p { font-size: 14px; color: var(--muted-strong); }
+  .fstep.live { border-color: var(--shield-edge); transform: translateY(-4px); box-shadow: 0 10px 30px var(--signal-soft); }
+  .fstep.live .k { color: var(--signal); }
+  .fstep:not(:last-child)::after { content: "→"; position: absolute; right: -11px; top: 22px; color: var(--muted); font-size: 14px; }
+  .outcomes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .oc { border-radius: var(--radius); padding: 14px 16px; border: 1px solid var(--border); background: var(--panel); display: grid; gap: 4px; }
+  .oc b { font-size: 16px; } .oc span { font-size: 14px; color: var(--muted); }
+  .oc.block { border-color: var(--shield-edge); } .oc.block b { color: var(--signal); }
+  .oc.flag b { color: var(--warn); } .oc.quiet b { color: var(--ok); }
+
+  /* cards */
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .grid2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; display: grid; gap: 10px; align-content: start; }
+  .card .k { font-family: var(--mono); font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--signal); }
+  .card p { font-size: 14.5px; color: var(--muted-strong); }
+  .card code { font-family: var(--mono); font-size: 12.5px; background: var(--elevated); padding: 1px 6px; border-radius: 3px; }
+  .lane { display: grid; gap: 8px; }
+  .lane .st { display: grid; grid-template-columns: 22px 1fr; gap: 10px; font-size: 14px; color: var(--muted-strong); }
+  .lane .st i { font-style: normal; font-family: var(--mono); font-size: 11px; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--elevated); color: var(--muted); }
+  .lane .st.bb { background: var(--shield); border: 1px solid var(--shield-edge); border-radius: var(--radius); padding: 8px; margin-inline: -4px; }
+  .lane .st.bb i { background: var(--signal); color: #fff; }
+
+  /* settings explained */
+  .set { display: grid; grid-template-columns: 220px 1fr; gap: 18px; padding: 16px 0; border-top: 1px solid var(--border); }
+  .set:last-child { border-bottom: 1px solid var(--border); }
+  .set .name { font-weight: 750; display: grid; gap: 6px; align-content: start; }
+  .set .name small { font-family: var(--mono); font-size: 11.5px; color: var(--muted); font-weight: 400; }
+  .switch { width: 38px; height: 22px; border-radius: 999px; background: var(--signal); position: relative; display: inline-block; }
+  .switch::after { content: ""; position: absolute; top: 3px; right: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; }
+  .set .what { display: grid; gap: 6px; font-size: 14.5px; color: var(--muted-strong); }
+
+  /* can / cannot */
+  .list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+  .list li { display: grid; grid-template-columns: 22px 1fr; gap: 10px; font-size: 14.5px; color: var(--muted-strong); }
+  .list li b { color: var(--text); font-weight: 700; }
+  .list.can li::before { content: "✓"; color: var(--ok); font-weight: 700; }
+  .list.cannot li::before { content: "–"; color: var(--muted); font-weight: 700; }
+  .chips { display: flex; flex-wrap: wrap; gap: 10px; }
+  .chip { border: 1px dashed var(--border-strong); border-radius: 999px; padding: 7px 13px; font-size: 14px; color: var(--muted-strong); }
+
+  /* testimonial */
+  .quote { position: relative; overflow: hidden; border: 1px solid var(--border); background: var(--panel); border-radius: var(--radius); padding: 30px 28px; display: grid; gap: 14px; }
+  .quote blockquote { margin: 0; font-size: clamp(20px, 2.6vw, 26px); line-height: 1.35; font-weight: 650; max-width: 40ch; }
+  .quote .who { font-family: var(--mono); font-size: 13px; color: var(--muted); }
+  .quote.pending blockquote { color: var(--muted); font-weight: 500; }
+  .quote::after { content: "“"; position: absolute; right: 18px; top: -30px; font-size: 200px; line-height: 1; color: var(--signal-soft); font-weight: 900; }
+
+  /* get started */
+  .start { border: 1px solid var(--shield-edge); background: linear-gradient(160deg, var(--shield), transparent 60%), var(--panel); border-radius: var(--radius); padding: 30px 28px; display: grid; gap: 16px; }
+  .opt { display: flex; gap: 10px; align-items: flex-start; font-size: 14.5px; color: var(--muted-strong); }
+  .opt input { margin-top: 3px; accent-color: var(--signal); width: 16px; height: 16px; }
+  .note { font-family: var(--mono); font-size: 13px; color: var(--muted); min-height: 1.4em; }
+  .note.ok { color: var(--ok); } .note.err { color: var(--signal); }
+  footer { color: var(--muted); font-size: 13px; font-family: var(--mono); }
+
+  /* Tested, attack by attack (from /trader-shield/attacks.json) */
+  .tally { display: flex; flex-wrap: wrap; gap: 10px; }
+  .tally span { font-family: var(--mono); font-size: 12px; letter-spacing: .06em; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border); }
+  .tally .blocked { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); background: var(--ok-soft); }
+  .tally .flagged { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); background: var(--warn-soft); }
+  .tally .missed { color: var(--signal); border-style: dashed; } .tally .allowed { color: var(--muted-strong); border-style: dashed; }
+  .agroup { display: grid; gap: 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); }
+  .agroup header { padding: 16px 18px 12px; border-bottom: 1px solid var(--border); }
+  .agroup header b { font-size: 16px; } .agroup header p { margin: 4px 0 0; font-size: 13.5px; color: var(--muted); }
+  .agroup > summary { cursor: pointer; list-style: none; } .agroup > summary::-webkit-details-marker { display: none; }
+  .agroup > summary b::after { content: " \25B8"; color: var(--muted); } .agroup[open] > summary b::after { content: " \25BE"; }
+  .arow { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 6px 14px; padding: 12px 18px; border-bottom: 1px solid var(--border); align-items: start; } .arow:last-child { border-bottom: 0; }
+  .arow .o { justify-self: start; font-family: var(--mono); font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px; }
+  .arow .o.blocked { color: #fff; background: var(--ok); } .arow .o.flagged { color: #111; background: var(--warn); }
+  .arow .o.missed { color: var(--signal); border: 1px dashed color-mix(in srgb, var(--signal) 55%, transparent); }
+  .arow .o.allowed { color: var(--muted-strong); border: 1px dashed var(--border-strong); }
+  .arow .t { font-weight: 700; font-size: 14.5px; } .arow .h { font-size: 13.5px; color: var(--muted-strong); margin-top: 2px; }
+  .arow .t, .arow .h, .arow .n { overflow-wrap: anywhere; }   /* paths and commands have no spaces to break at */
+  .arow .n { font-size: 12.5px; color: var(--muted); margin-top: 4px; } .arow .n b { color: var(--text); }
+  .arow .proof { font-family: var(--mono); font-size: 10.5px; color: var(--muted); margin-left: 6px; }
+  .attacks { display: grid; gap: 16px; }
+
+  /* What the verified graph knows about crypto (from /trader-shield/graph.json) */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .stat { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; display: grid; gap: 6px; align-content: start; }
+  .stat .num { font-size: clamp(26px, 3.4vw, 34px); font-weight: 850; font-stretch: 110%; letter-spacing: -.01em; font-variant-numeric: tabular-nums; line-height: 1.05; }
+  .stat .lbl { font-weight: 700; font-size: 14.5px; } .stat .act { font-family: var(--mono); font-size: 11.5px; letter-spacing: .04em; color: var(--muted); }
+  .stat .act b { color: var(--signal); font-weight: 600; } .stat .act i { color: var(--warn); font-style: normal; }
+  .brands { display: flex; flex-wrap: wrap; gap: 8px; }
+  .brands span { font-size: 13.5px; border: 1px solid var(--border); background: var(--panel); border-radius: 999px; padding: 5px 11px; color: var(--muted-strong); }
+  .brands span b { font-variant-numeric: tabular-nums; color: var(--text); margin-left: 4px; }
+
+  /* Proven, system by system (from /trader-shield/attacks.json: targets + evidence) */
+  .proven-total { display: flex; flex-wrap: wrap; gap: 8px 22px; font-family: var(--mono); font-size: 13px; color: var(--muted-strong); }
+  .proven-total b { color: var(--text); font-size: 15px; font-variant-numeric: tabular-nums; }
+  .systems { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .sys { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; display: grid; gap: 10px; align-content: start; }
+  .sys header { display: flex; align-items: center; gap: 10px; } .sys header img { width: 26px; height: 26px; }
+  .sys header b { font-size: 16px; } .sys header small { display: block; font-size: 12px; color: var(--muted); }
+  .sys .big { font-size: 28px; font-weight: 850; font-variant-numeric: tabular-nums; line-height: 1; }
+  .sys .big span { font-size: 13px; font-weight: 600; color: var(--muted-strong); margin-left: 6px; }
+  .sys ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .sys li { font-size: 13.5px; color: var(--muted-strong); display: grid; gap: 3px; }
+  .ev { display: flex; flex-wrap: wrap; gap: 4px; }
+  .ev i { font-style: normal; font-family: var(--mono); font-size: 10px; letter-spacing: .06em; text-transform: uppercase; padding: 1px 6px;
+    border-radius: 3px; border: 1px solid var(--border-strong); color: var(--muted); }
+  .ev i.real-agent { border-color: var(--shield-edge); color: var(--signal); }
+  .ev i.real-software { border-color: color-mix(in srgb, var(--ok) 55%, transparent); color: var(--ok); }
+
+  /* quick start */
+  .qs { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; counter-reset: qs; }
+  .qs li { counter-increment: qs; display: grid; grid-template-columns: 28px 1fr; gap: 12px; font-size: 14.5px; color: var(--muted-strong); }
+  .qs li::before { content: counter(qs); width: 26px; height: 26px; border-radius: 50%; border: 1px solid var(--shield-edge); color: var(--signal);
+    font-family: var(--mono); font-size: 12px; display: grid; place-items: center; }
+  .qs li b { color: var(--text); } .qs code { font-family: var(--mono); font-size: 12.5px; background: var(--elevated); padding: 2px 7px; border-radius: 3px; overflow-wrap: anywhere; }
+  @media (max-width: 900px) {
+    .hero { grid-template-columns: 1fr; } .stage { height: 360px; }
+    .flow { grid-template-columns: 1fr 1fr; } .fstep:not(:last-child)::after { display: none; }
+    .systems { grid-template-columns: 1fr 1fr; }
+    .grid3, .outcomes { grid-template-columns: 1fr; } .grid2 { grid-template-columns: 1fr; } .stats { grid-template-columns: 1fr 1fr; }
+    .set { grid-template-columns: 1fr; gap: 8px; }
+  }
+  @media (max-width: 480px) { .systems { grid-template-columns: 1fr; } .flow { grid-template-columns: 1fr; } .wrap { gap: 64px; } .arow { grid-template-columns: 1fr; }
+    .stage { height: 290px; } .stack { width: min(360px, 50%); } }   /* a phone column: perspective enlarges the top layer and leans it right */
+  @media (prefers-reduced-motion: reduce) {
+    .stack, .bolt, .p-shield::before, .beta i { animation: none !important; }
+    .bolt { display: none; } .fstep { transition: none; }
+  }
+</style>
+</head>
+<body>
+<div class="top">
+  <a class="brand" href="/" aria-label="Back to the Blackbox dashboard">BLACKB<span class="dot" aria-hidden="true"></span>X</a>
+  <a class="back" href="/">← Dashboard</a>
+</div>
+
+<div class="wrap">
+
+  <!-- Hero -->
+  <section class="hero" aria-label="Trader Shield">
+    <div class="hero-copy">
+      <span class="beta"><i aria-hidden="true"></i>New · Trader Shield beta</span>
+      <h1>Your agent trades.<br />It never touches your keys.</h1>
+      <p class="lead">Trader Shield sits between your AI agent and your crypto wallets. Your agent keeps placing trades through its own tools, but it can't open your wallet's vault, handle your seed phrase, or send your private keys anywhere. It guards AI agents attached to Blackbox through Hermes; agents run through OpenClaw are not covered today.</p>
+      <div class="cta-row">
+        <a class="btn primary" href="#start">Get started with the beta</a>
+        <a class="btn ghost" href="#how">How it works</a>
+      </div>
+      <div class="status" id="status" aria-live="polite"><span class="state off">Checking this machine…</span></div>
+    </div>
+    <div>
+      <div class="stage" aria-hidden="true">
+        <div class="stack">
+          <div class="plane p-wallet"></div>
+          <div class="plane p-shield"></div>
+          <div class="plane p-agent"></div>
+          <div class="bolt"></div>
+          <div class="bolt two"></div>
+        </div>
+      </div>
+      <div class="legend"><span><b style="background:var(--text)"></b>Your AI agent</span><span><b style="background:var(--signal)"></b>Trader Shield</span><span><b style="background:var(--muted-strong)"></b>Your wallet</span><span><b style="background:var(--ok)"></b>Trades pass through</span></div>
+    </div>
+  </section>
+
+  <!-- How it works -->
+  <section id="how" aria-label="How it works">
+    <div class="eyebrow">How it works</div>
+    <h2>Every action is checked before it runs</h2>
+    <p class="muted">Each time your agent is about to read a file, run a command or send something, Trader Shield checks it on your own machine first. Nothing about your wallet ever leaves the machine.</p>
+    <div class="flow" id="flow">
+      <div class="fstep"><span class="k">1 · The agent acts</span><h3>A tool call or command</h3><p>Reading a file, running <span class="mono">tar</span> or <span class="mono">cp</span>, writing or sending text.</p></div>
+      <div class="fstep"><span class="k">2 · Sees the files</span><h3>Terminal or file tool</h3><p>Finds every path a command touches, even inside archives and copies.</p></div>
+      <div class="fstep"><span class="k">3 · The vault</span><h3>Is it your wallet?</h3><p>Recognises your wallet's key store in every browser profile.</p></div>
+      <div class="fstep"><span class="k">4 · Secrets</span><h3>Phrase or key?</h3><p>Spots real seed phrases by their checksum, and private keys by their label.</p></div>
+      <div class="fstep"><span class="k">5 · Leaving?</span><h3>Sent off the machine?</h3><p>A secret in an upload, request or message is stopped.</p></div>
+    </div>
+    <div class="outcomes">
+      <div class="oc block"><b>Blocked</b><span>In block mode the action never runs, and your agent is told why.</span></div>
+      <div class="oc flag"><b>Flagged</b><span>In audit mode, or for cases that are sometimes fine: it runs and you see it on the dashboard.</span></div>
+      <div class="oc quiet"><b>Never logged</b><span>Seed phrases and keys are scrubbed from Blackbox's own records, always.</span></div>
+    </div>
+  </section>
+
+  <!-- The threats -->
+  <section aria-label="What it stops">
+    <div class="eyebrow">What it stops</div>
+    <h2>Three ways a wallet gets emptied</h2>
+    <div class="grid3">
+      <div class="card"><span class="k">Steal the vault</span>
+        <div class="lane">
+          <div class="st"><i>1</i><span>A poisoned package or web page tells the agent to "back up the browser profile".</span></div>
+          <div class="st bb"><i>✓</i><span><b>Trader Shield</b> recognises your wallet's vault inside the archive and stops it.</span></div>
+          <div class="st"><i>2</i><span>Without it: the vault is uploaded and cracked offline.</span></div>
+        </div></div>
+      <div class="card"><span class="k">Capture the seed phrase</span>
+        <div class="lane">
+          <div class="st"><i>1</i><span>A fake "recovery" or "support" flow asks for your 12 or 24 words.</span></div>
+          <div class="st bb"><i>✓</i><span><b>Trader Shield</b> recognises a real phrase by its checksum and stops it leaving.</span></div>
+          <div class="st"><i>2</i><span>Without it: whoever has the words owns the wallet.</span></div>
+        </div></div>
+      <div class="card"><span class="k">Lift the trading key</span>
+        <div class="lane">
+          <div class="st"><i>1</i><span>An injected instruction asks the agent to "share the config for debugging".</span></div>
+          <div class="st bb"><i>✓</i><span><b>Trader Shield</b> recognises the private key and stops it being sent.</span></div>
+          <div class="st"><i>2</i><span>Without it: the key signs transactions for the attacker.</span></div>
+        </div></div>
+    </div>
+  </section>
+
+  <!-- What Umanitek's verified threat graph knows about crypto (counted by scripts/blackbox-trader-graph-counts.py) -->
+  <section id="known" aria-label="What it already knows">
+    <div class="eyebrow">What it already knows</div>
+    <h2>The crypto threats in the verified threat graph</h2>
+    <p class="muted">Blackbox checks every action against Umanitek's verified threat graph. These are the crypto threats in it today, counted the same way each time.</p>
+    <div class="stats" id="known-stats"><p class="muted">Loading the counts…</p></div>
+    <div class="card"><span class="k">Fake sites that name a crypto brand</span>
+      <p id="known-brands-lead">Phishing and drainer sites whose address names the brand they imitate.</p>
+      <div class="brands" id="known-brands"></div></div>
+  </section>
+
+  <!-- Proven, system by system: the same table, grouped by what each attack goes after -->
+  <section id="proven" aria-label="Proven, system by system">
+    <div class="eyebrow">Proven, system by system</div>
+    <h2>What we tried against each wallet, and stopped</h2>
+    <p class="muted">Every attack below was run through Blackbox's real checks; many were also tried against the real software installed the normal way, and some by a real AI agent asked to do it. The labels say which.</p>
+    <div class="proven-total" id="proven-total"></div>
+    <div class="systems" id="systems"><p class="muted">Loading…</p></div>
+  </section>
+
+  <!-- Tested, attack by attack: the same table the test suite checks -->
+  <section id="tested" aria-label="Tested attack by attack">
+    <div class="eyebrow">Tested, attack by attack</div>
+    <h2>Every Web3 attack we tried, and what happened</h2>
+    <p class="muted">Each one was run through Blackbox's real checks<span id="tested-with"></span>. This list is the same file Blackbox's tests check, so it can't say more than the code does. <span class="mono" id="bench-run"></span></p>
+    <div class="tally" id="tally"></div>
+    <div class="attacks" id="attacks"><p class="muted">Loading the tested attacks…</p></div>
+  </section>
+
+  <!-- Settings explained -->
+  <section aria-label="The settings">
+    <div class="eyebrow">The settings</div>
+    <h2>What each switch does</h2>
+    <p class="muted">All in Blackbox Settings → Trader Shield. Changes apply on the next action your agent takes.</p>
+    <div>
+      <div class="set"><div class="name"><span class="switch" aria-hidden="true"></span>Engage Trader Shield<small>off by default</small></div>
+        <div class="what"><p>Turns the wallet protections on. While it's off, Blackbox doesn't flag or block anything wallet-related and the Trader Shield panel stays hidden. Seed phrases and keys are still kept out of Blackbox's logs either way.</p></div></div>
+      <div class="set"><div class="name">Wallets to protect<small>pick the ones you use</small></div>
+        <div class="what"><p>Only the wallets you tick are guarded. Blackbox finds them by checking which folders exist in your browser profiles and app folders; it never opens a wallet. The dashboard panel lists what it found.</p></div></div>
+      <div class="set"><div class="name">Your wallet addresses<small>optional</small></div>
+        <div class="what"><p>A raw private key looks exactly like a transaction hash. List your own public addresses and Trader Shield recognises a raw key that opens one of them. Addresses stay on this machine — never logged, reported or shared.</p></div></div>
+      <div class="set"><div class="name">Protection mode: Audit or Block<small>Blackbox-wide setting</small></div>
+        <div class="what"><p><b>Audit</b> records and flags. <b>Block</b> stops the action before it runs. For real protection, use Block once you've seen a day of flags.</p></div></div>
+      <div class="set"><div class="name">Protected files<small>.env · ~/.ssh · *.pem …</small></div>
+        <div class="what"><p>Your own list of sensitive files, such as the config where your exchange API keys live. Reads through file tools and the terminal are flagged critical and blocked in block mode; setting a project up from its template (cp .env.example .env) keeps working.</p></div></div>
+    </div>
+  </section>
+
+  <!-- Can / cannot -->
+  <section aria-label="Can and can't">
+    <div class="eyebrow">Straight answers</div>
+    <h2>What it does today, and what's on the way</h2>
+    <div class="grid2">
+      <div class="card"><span class="k" style="color:var(--ok)">It can</span><ul class="list can" id="can"></ul></div>
+      <div class="card"><span class="k" style="color:var(--signal)">On the way</span><ul class="list cannot" id="cannot"></ul></div>
+    </div>
+    <div class="card"><span class="k">Coming soon</span><div class="chips" id="coming"></div>
+      <p class="muted" style="font-size:13.5px">This page is updated as each one ships. <span class="mono" id="version"></span></p></div>
+  </section>
+
+  <!-- Testimonial -->
+  <section aria-label="From traders">
+    <div class="eyebrow">From traders</div>
+    <div class="quote pending" id="quote">
+      <blockquote id="quote-text">A trader's write-up on Trader Shield will appear here.</blockquote>
+      <div class="who" id="quote-who">Coming soon</div>
+    </div>
+  </section>
+
+  <!-- Get started -->
+  <section id="start" aria-label="Get started">
+    <div class="start">
+      <span class="beta"><i aria-hidden="true"></i>Beta</span>
+      <h2>Get started with Trader Shield</h2>
+      <ol class="qs" aria-label="Quick start">
+        <li><span><b>Install Blackbox</b> (skip if you are reading this from your dashboard): <code>curl -fsSL blackbox.umanitek.ai | bash</code>, then open the dashboard with <code>blackbox dashboard</code>.</span></li>
+        <li><span><b>Engage Trader Shield</b> with the button below. Keep block mode ticked: wallet threats are stopped, not just flagged.</span></li>
+        <li><span><b>Choose your wallets</b> in Settings → Trader Shield, and list your own wallet addresses (public, kept on this machine) so a raw private key is recognised too.</span></li>
+        <li><span><b>Restart your agent</b> so it picks up the rules.</span></li>
+        <li><span><b>Try it safely.</b> In an empty folder run <code>echo DEMO_KEY=not-a-real-key &gt; .env</code>, then ask your agent to <code>cat .env</code>. It is blocked, and the block shows on your dashboard.</span></li>
+      </ol>
+      <p class="muted">The button turns Trader Shield on for every wallet it supports on this machine. You can choose wallets, or switch it off, any time in Settings.</p>
+      <label class="opt"><input type="checkbox" id="opt-block" checked /> <span><b>Also switch Blackbox to block mode</b>, so wallet threats are stopped, not just flagged. Your agent's own trading tools keep working.</span></label>
+      <div class="cta-row">
+        <button class="btn primary" id="engage" type="button">Engage Trader Shield</button>
+        <a class="btn ghost" href="/">Back to the dashboard</a>
+      </div>
+      <div class="note" id="engage-note" aria-live="polite"></div>
+    </div>
+  </section>
+
+  <footer>Trader Shield is part of Agent Blackbox. All checks run on this machine; wallet findings are never shared with anyone.</footer>
+</div>
+
+<script>
+  // ---- Page content: page/content.json beside this page (edit that file as Trader Shield gains features) ----
+  // Every address is relative to this page's own folder, so the page never knows where it is mounted.
+  var HERE = location.pathname.replace(/\/?$/, "/");
+  var ID = HERE.split("/").slice(-2)[0];
+  function getJSON(url) {   // a non-2xx answer rejects: a failed fetch never renders as empty lists or zero counts
+    return fetch(HERE + url, { cache: "no-store", headers: { Accept: "application/json" } }).then(function (r) { if (!r.ok) throw new Error(url + " answered " + r.status); return r.json(); });
+  }
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function item(pair) { return "<li><span><b>" + esc(pair[0]) + "</b> — " + esc(pair[1]) + "</span></li>"; }
+  var page = getJSON("content.json"), table = getJSON("attacks.json");
+  page.then(function (c) {
+    document.getElementById("can").innerHTML = (c.can || []).map(item).join("");
+    document.getElementById("cannot").innerHTML = (c.cannot || []).map(item).join("");
+    document.getElementById("coming").innerHTML = (c.coming || []).map(function (x) { return '<span class="chip">' + esc(x) + "</span>"; }).join("");
+    if (!c.testimonial) return;
+    document.getElementById("quote").classList.remove("pending");
+    document.getElementById("quote-text").textContent = c.testimonial.text;
+    var who = document.getElementById("quote-who");
+    who.textContent = c.testimonial.who;
+    if (c.testimonial.link) who.innerHTML += ' · <a href="' + esc(c.testimonial.link) + '" target="_blank" rel="noopener">Read the article</a>';
+  }).catch(function () { document.getElementById("can").innerHTML = '<li class="muted">Open this page from your Blackbox dashboard to see what it covers.</li>'; });
+  Promise.all([page, table]).then(function (both) {   // the count is the served table's, never typed
+    document.getElementById("version").textContent = (both[0].version || "") + " · " + (both[1].attacks || []).length + " attacks tested";
+  }).catch(function () {});
+
+  // ---- What the verified graph knows about crypto (counted by scripts/blackbox-trader-graph-counts.py) ----
+  function n(x) { return Number(x || 0).toLocaleString("en-US"); }
+  getJSON("graph.json").then(function (g) {
+    var pk = g.crypto_packages || {};
+    var stats = [
+      [n(g.drainer_phishing_domains), "Web3 phishing and wallet-drainer sites", "flagged when your agent goes there", "flag"],
+      [n(g.crypto_packages_total), "malicious crypto packages", (pk.npm ? n(pk.npm.packages) + " npm · " : "") + (pk.pypi ? n(pk.pypi.packages) + " PyPI · " : "") + "blocked in block mode", "block"],
+      [n(g.drainer_wallets), "listed drainer wallets", "Ethereum-style networks only · an approval to one is blocked", "block"],
+      [n(g.stealer_indicators), "wallet-stealer malware indicators", "Vidar, Lumma, Atomic, RedLine and more · flagged", "flag"]
+    ];
+    document.getElementById("known-stats").innerHTML = stats.map(function (s) {
+      var act = s[3] === "block" ? "<b>" + esc(s[2]) + "</b>" : "<i>" + esc(s[2]) + "</i>";
+      return '<div class="stat"><span class="num">' + esc(s[0]) + '</span><span class="lbl">' + esc(s[1]) + '</span><span class="act">' + act + "</span></div>";
+    }).join("");
+    document.getElementById("known-brands-lead").textContent = n(g.brand_sites_total) +
+      " phishing and drainer sites name the brand they imitate. Thousands more lure with \u201cclaim\u201d (" + n((g.lure_sites || {}).claim) +
+      ") or \u201cairdrop\u201d (" + n((g.lure_sites || {}).airdrop) + ").";
+    document.getElementById("known-brands").innerHTML = (g.brand_sites || []).slice(0, 18).map(function (b) {
+      return "<span>" + esc(b.brand) + "<b>" + n(b.sites) + "</b></span>";
+    }).join("");
+  }).catch(function () {
+    document.getElementById("known-stats").innerHTML = '<p class="muted">Open this page from your Blackbox dashboard to see the counts.</p>';
+  });
+
+  // ---- Proven, system by system (targets + evidence of each attack row) ----
+  var EV_WORD = { "real-agent": "real AI agent", "real-software": "real app", bench: "real checks", tests: "tests" };
+  function renderProven(t) {
+    var blocked = (t.attacks || []).filter(function (a) { return a.outcome === "blocked"; });
+    var byAgent = blocked.filter(function (a) { return (a.evidence || []).indexOf("real-agent") >= 0; }).length;
+    var byApp = blocked.filter(function (a) { return (a.evidence || []).indexOf("real-software") >= 0; }).length;
+    document.getElementById("proven-total").innerHTML =
+      "<span><b>" + blocked.length + "</b> attacks blocked</span><span><b>" + (t.systems || []).length + "</b> wallets and systems</span>" +
+      "<span><b>" + byApp + "</b> proven on the real software</span><span><b>" + byAgent + "</b> blocked with a real AI agent trying</span>";
+    document.getElementById("systems").innerHTML = (t.systems || []).map(function (sys) {
+      var mine = blocked.filter(function (a) { return (a.targets || []).indexOf(sys.id) >= 0; });
+      if (!mine.length) return "";
+      mine.sort(function (a, b) { return (b.evidence || []).length - (a.evidence || []).length; });
+      var agent = mine.filter(function (a) { return (a.evidence || []).indexOf("real-agent") >= 0; }).length;
+      var logo = sys.logo ? '<img src="' + esc(HERE + "packs/" + sys.id + "/logo.svg") + '" alt="" />' : "";
+      return '<div class="sys"><header>' + logo + "<div><b>" + esc(sys.name) + "</b>" + (sys.note ? "<small>" + esc(sys.note) + "</small>" : "") +
+        '</div></header><div class="big">' + mine.length + "<span>blocked" + (agent ? " · " + agent + " by a real agent" : "") + "</span></div><ul>" +
+        mine.slice(0, 6).map(function (a) {
+          var ev = (a.evidence || []).filter(function (e) { return e !== "tests"; }).reverse().map(function (e) {
+            return '<i class="' + esc(e) + '">' + esc(EV_WORD[e] || e) + "</i>";
+          }).join("");
+          return "<li>" + esc(a.title) + '<span class="ev">' + ev + "</span></li>";
+        }).join("") + (mine.length > 6 ? '<li class="muted">and ' + (mine.length - 6) + " more in the list below</li>" : "") + "</ul></div>";
+    }).join("");
+  }
+
+  // ---- Tested, attack by attack (the file the test suite checks) ----
+  var OUTCOME_WORD = { blocked: "Blocked", flagged: "Flagged", missed: "Coming", allowed: "Left alone" };
+  table.then(function (t) {
+    var count = { blocked: 0, flagged: 0, missed: 0, allowed: 0 };
+    t.attacks.forEach(function (a) { count[a.outcome] += 1; });
+    document.getElementById("tally").innerHTML = ["blocked", "flagged", "missed", "allowed"].filter(function (o) { return count[o]; }).map(function (o) {
+      return '<span class="' + o + '">' + count[o] + " " + OUTCOME_WORD[o].toLowerCase() + "</span>";
+    }).join("");
+    document.getElementById("tested-with").textContent = t.tested_with ? " with " + t.tested_with : "";
+    document.getElementById("bench-run").textContent = t.bench_run ? "Last full run: " + t.bench_run + "." : "";
+    renderProven(t);
+    document.getElementById("attacks").innerHTML = t.groups.map(function (g) {
+      var rows = t.attacks.filter(function (a) { return a.group === g.id; });
+      if (!rows.length) return "";
+      var box = g.fold ? ["details", "<summary>", "</summary>"] : ["div", "", ""];   // a folded group (one generated row per browser folder) opens on click
+      return "<" + box[0] + ' class="agroup">' + box[1] + "<header><b>" + esc(g.title) + "</b><p>" + esc(g.intro) + "</p></header>" + box[2] + rows.map(function (a) {
+        return '<div class="arow"><span class="o ' + esc(a.outcome) + '">' + esc(OUTCOME_WORD[a.outcome] || a.outcome) + "</span><div>" +
+          '<div class="t">' + esc(a.title) + '<span class="proof">' + (a.proof === "bench" ? "proven on a bench node" : "checked by the tests") + "</span></div>" +
+          '<div class="h">' + esc(a.how) + "</div>" + (a.next ? '<div class="n"><b>How we\'ll add it:</b> ' + esc(a.next) + "</div>" : "") + "</div></div>";
+      }).join("") + "</" + box[0] + ">";
+    }).join("");
+  }).catch(function () {
+    document.getElementById("attacks").innerHTML = '<p class="muted">Open this page from your Blackbox dashboard to see the tested attacks.</p>';
+  });
+
+  // ---- The "how it works" steps light up in turn ----
+  (function () {
+    var steps = document.querySelectorAll("#flow .fstep"), i = 0;
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) { steps[0].classList.add("live"); return; }
+    setInterval(function () {
+      steps.forEach(function (s) { s.classList.remove("live"); });
+      steps[i % steps.length].classList.add("live");
+      i += 1;
+    }, 1400);
+  })();
+
+  // ---- Live status from this machine: this shield's card in the dashboard's /api/shields ----
+  function renderStatus(d) {
+    var el = document.getElementById("status");
+    if (!d || !d.mode || !d.mode.enabled) {
+      el.innerHTML = '<span class="state off">Not engaged</span><span class="detail">Trader Shield is off on this machine.</span>';
+      return;
+    }
+    // The wallets themselves are listed on the dashboard's card; here only the state, and a note if none is guarded.
+    var found = ((d.sections || [])[0] || {}).rows || [];
+    var guarded = found.some(function (row) { return row.state === "ok" || row.state === "watch"; });
+    el.innerHTML = '<span class="state on">● Engaged · ' + (d.blocking ? "blocking" : "watching only (audit mode)") + "</span>" +
+      (guarded ? "" : '<span class="detail">No protected wallet found on this machine yet</span>');
+    var engage = document.getElementById("engage");
+    engage.textContent = "Trader Shield is engaged";
+    engage.disabled = true;
+  }
+  function loadStatus() { getJSON("../../api/shields").then(function (all) {
+    renderStatus((all || []).filter(function (d) { return d.shield_id === ID; })[0]);
+  }).catch(function () {
+    document.getElementById("status").innerHTML = '<span class="state off">Status unavailable</span><span class="detail">Is the Blackbox dashboard running?</span>';
+  }); }
+  loadStatus();
+
+  // ---- Engage: the same settings call the dashboard makes (session token required) ----
+  document.getElementById("engage").addEventListener("click", function () {
+    var note = document.getElementById("engage-note"), btn = this;
+    btn.disabled = true; note.className = "note"; note.textContent = "Engaging…";
+    var body = { shields: { trader: { enabled: true } } };   // a first engage protects every supported wallet
+    if (document.getElementById("opt-block").checked) body.mode = "block";
+    getJSON("../../api/session").then(function (s) {
+      return fetch(HERE + "../../api/settings", { method: "POST", cache: "no-store",
+        headers: { "Content-Type": "application/json", Accept: "application/json", "X-Blackbox-Token": (s && s.token) || "" },
+        body: JSON.stringify(body) });
+    }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); }).then(function (res) {
+      var view = (res.body && res.body.settings && res.body.settings.shields) || {};   // the composed settings view
+      if (res.ok && res.body && res.body.ok && view.trader && view.trader.mode && view.trader.mode.enabled === true) {
+        note.className = "note ok"; note.textContent = "Trader Shield is engaged. Your dashboard now shows the Trader Shield panel.";
+        loadStatus();
+      } else {
+        btn.disabled = false; note.className = "note err";
+        note.textContent = "Couldn't engage: " + (((res.body || {}).errors || []).join("; ") || "the settings could not be saved");
+      }
+    }).catch(function () { btn.disabled = false; note.className = "note err"; note.textContent = "Couldn't reach Blackbox. Is the dashboard running?"; });
+  });
+</script>
+</body>
+</html>

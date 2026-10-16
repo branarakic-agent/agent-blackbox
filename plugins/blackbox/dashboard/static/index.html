@@ -86,7 +86,7 @@
        never orange. Signal Orange is reserved for live and flagged states. */
     --mint: #F1EFE9;
     --teal: #BBB8B1;
-    /* Protection states (Trader Shield panel): secured = green, watched only = amber. */
+    /* Protection states (shield cards): secured = green, watched only = amber. */
     --secure: #4CC38A; --secure-soft: rgba(76,195,138,0.14);
     --caution: #E3B341; --caution-soft: rgba(227,179,65,0.14);
     --critical: #FF4F00;
@@ -309,6 +309,7 @@
   .status-pill.mode-block { color: var(--signal); border-color: rgba(255,79,0,0.55); background: var(--signal-soft); }
 
   /* gear button — same pill visual language as the status pills */
+  a.gear-btn { text-decoration: none; }
   .gear-btn {
     display: inline-flex;
     align-items: center;
@@ -811,7 +812,7 @@
     overflow: hidden;
   }
 
-  /* ---------- Trader Shield: announcement banner ---------- */
+  /* ---------- Shields: the "New" banner (static/shields.js) ---------- */
   .ts-banner { position: relative; overflow: hidden; margin-top: 28px; border: 1px solid color-mix(in srgb, var(--signal) 55%, transparent);
     border-radius: var(--radius); background: var(--panel); padding: 20px 56px 20px 22px; display: flex; flex-wrap: wrap; gap: 16px 28px; align-items: center; }
   .ts-banner[hidden] { display: none; }   /* display:flex above would otherwise override [hidden] */
@@ -833,7 +834,7 @@
   .ts-link { color: var(--signal); text-decoration: none; } .ts-link:hover { text-decoration: underline; }
   @media (prefers-reduced-motion: reduce) { .ts-glow { animation: none; } }
 
-  /* ---------- Wallet protection panel + settings (trader rules) ---------- */
+  /* ---------- Shield cards and their Settings groups (static/shields.js) ---------- */
   .wallet-picks { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 8px; }
   .set-addresses { width: 100%; max-width: 520px; box-sizing: border-box; margin-top: 8px; font: 12px/1.5 var(--mono, ui-monospace, monospace);
     background: var(--panel-2, transparent); color: inherit; border: 1px solid var(--line, #444); border-radius: 6px; padding: 6px 8px; resize: vertical; }
@@ -879,14 +880,14 @@
   button.ldx-open:focus-visible { outline: 2px solid var(--signal); outline-offset: -2px; }
   .ldx-go { margin-left: auto; color: var(--muted); font-size: 18px; padding-left: 8px; }
 
-  /* Wallet logos (Trader Shield): the wallet an event is about, at a glance */
+  /* Shield logos: the pack an event is about, at a glance (a glyph when it has none) */
   .wl { display: inline-block; width: 20px; height: 20px; vertical-align: -5px; margin-right: 8px; flex: 0 0 auto; object-fit: contain; }
   .wl-mark { color: var(--signal); } .wl-mark svg { width: 100%; height: 100%; display: block; }
   .wl.big { width: 28px; height: 28px; margin: 0; vertical-align: middle; }
   .wl.huge { width: 40px; height: 40px; margin: 0 0 6px; }
   .wp-ev .wl { width: 18px; height: 18px; vertical-align: -4px; }
 
-  /* ---------- Trader Shield: the full-screen wallet-events window (local only) ---------- */
+  /* ---------- Shields: the full-screen events window (local only) ---------- */
   .wev-overlay { position: fixed; inset: 0; z-index: 1000;   /* the modals' layer: above the sticky header */
     background: var(--bg); display: flex; flex-direction: column; }
   .wev-overlay[hidden] { display: none; }
@@ -2935,6 +2936,10 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/><path d="M8 9h8M8 13h5"/></svg>
             <span class="header-action-label">Assistant</span>
           </button>
+          <a class="gear-btn docs-link" id="docs-open" href="/docs" aria-label="Open the Blackbox docs" title="Docs">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h7M9 11h5"/></svg>
+            <span class="header-action-label">Docs</span>
+          </a>
           <button type="button" class="gear-btn" id="settings-open" aria-label="Open detection settings" title="Detection settings">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09A1.65 1.65 0 0 0 19.4 15z"/></svg>
             <span class="header-action-label">Settings</span>
@@ -2959,20 +2964,8 @@
 
   <div class="wrap">
 
-    <!-- New product: Trader Shield (shown while not engaged, for a week from first sight, dismissible) -->
-    <div class="ts-banner" id="ts-banner" hidden role="region" aria-label="New: Trader Shield">
-      <div class="ts-glow" aria-hidden="true"></div>
-      <div class="ts-copy">
-        <span class="ts-new">New · Beta</span>
-        <div class="ts-title">Trader Shield</div>
-        <div class="ts-sub">Keep your AI agent away from your crypto wallets: no vault access, no seed phrases, no private keys leaving this machine. Your trading tools keep working.</div>
-      </div>
-      <div class="ts-actions">
-        <button type="button" class="ts-btn primary" id="ts-engage">Engage Trader Shield</button>
-        <a class="ts-btn" href="/trader-shield">Learn more →</a>
-      </div>
-      <button type="button" class="ts-close" id="ts-close" aria-label="Dismiss the Trader Shield announcement">&#10005;</button>
-    </div>
+    <!-- Each shield's "New" banner, drawn by static/shields.js from /api/shields -->
+    <div id="shield-banners"></div>
 
     <!-- Connected agents -->
     <section class="section" aria-label="Connected agents">
@@ -2994,17 +2987,8 @@
       </div>
     </section>
 
-    <!-- Wallet protection (trader rules): what was found on this machine, and how it is protected -->
-    <section class="section" aria-label="Trader Shield" id="wallet-protection" hidden>
-      <div class="section-head">
-        <div class="section-htext">
-          <h2>Trader Shield <span class="ts-beta">Beta</span></h2>
-          <div class="section-note">What Blackbox found on this machine, and how it keeps your agent away from it. <a href="/trader-shield" class="ts-link">Learn more</a></div>
-        </div>
-        <div class="head-right"><span class="wp-mode" id="wp-mode">…</span><button type="button" class="ts-btn" id="wp-edit">Edit settings</button></div>
-      </div>
-      <div class="panel"><div class="wp-grid" id="wp-body"><div class="empty" style="padding:24px 20px;">Checking this machine&hellip;</div></div></div>
-    </section>
+    <!-- One card per shield, drawn by static/shields.js from /api/shields (shown while the shield is on) -->
+    <div id="shield-cards"></div>
 
     <!-- Threat graph (tabbed) -->
     <section class="section" aria-label="Threat graph">
@@ -3291,6 +3275,7 @@
 
 <!-- Vendored (same-origin) force-graph UMD bundle — defines window.ForceGraph. -->
 <script src="./vendor/force-graph.min.js"></script>
+<script src="./shields.js"></script>
 <script>
 (function () {
   "use strict";
@@ -3960,7 +3945,7 @@
       '</div>';
     }).join("");
     // "+ Attach another" tile — always present as the manual escape hatch, even
-    // when agents are already connected (auto-attach covers the common case).
+    // when agents are already connected: Blackbox joins only the agents the operator chooses.
     var addTile = '<button type="button" class="agent-add-tile" id="attach-open" title="Manage local agents">' +
       '<span class="agent-add-ico">' +
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>' +
@@ -4083,7 +4068,7 @@
     var last = s.last_share;
     $("stat-sharing-meta").textContent = last
       ? "last share " + fmtAgo(last.ts) + " \u00b7 " + (last.outcome || (last.ok ? "accepted" : "failed"))
-      : (s.sharing_enabled ? "on by default \u00b7 nothing shared yet" : "off \u00b7 turn on in settings");
+      : (s.sharing_enabled ? "on \u00b7 nothing shared yet" : "off \u00b7 opt in from settings");
   }
 
   function loadCommunityStats() {
@@ -4146,8 +4131,8 @@
       } else if (note) {
         note.textContent = "Save failed.";
       }
-    }).catch(function () {
-      if (note) note.textContent = "Save failed.";
+    }).catch(function (err) {
+      if (note) note.textContent = err && err.readOnly ? err.message : "Save failed.";
     });
   }
 
@@ -4615,7 +4600,7 @@
       (s.events || []).forEach(function (ev) {
         (ev.threats || []).forEach(function (t) {
           // The rule id AND its title: one wallet-vault rule serves every wallet and names it
-          // only in the title, so MetaMask and Phantom must not fold into one bubble.
+          // only in the title, so two wallets must not fold into one bubble.
           var key = t.identifier ? t.identifier + "|" + (t.title || "") : ((t.title || "threat") + ":" + (t.ts || 0));
           var item = byId[key];
           if (!item) { item = byId[key] = { t: t, s: s, ev: ev, count: 0, first: t.ts || 0, all: [] }; order.push(key); }
@@ -4642,7 +4627,7 @@
       var sightings = items.reduce(function (n, it) { return n + it.count; }, 0);
       var meta = CATS[ck] || { name: ck, color: "#858289" };
       var hubId = "__lcat__:" + ck;
-      // count = different threats of this type (MetaMask and Phantom are two); how often each was
+      // count = different threats of this type (two wallets' vaults are two); how often each was
       // seen belongs to that threat, so the total sightings only appear in the hover card.
       nodes.push({ id: hubId, kind: "hub", cat: ck, label: meta.name, count: items.length, sightings: sightings, color: meta.color,
                    val: 13 + Math.min(19, Math.log(items.length + 1) * 3.2),
@@ -5224,397 +5209,13 @@
     window.addEventListener("scroll", hide, true);
   })();
 
-  // ---------- Wallet protection panel (GET /api/wallet-protection) ----------
-  function wpHelp(text) {
-    return '<span class="m-help" tabindex="0" role="note" aria-label="' + esc(text) + '" data-help="' + esc(text) + '">i</span>';
-  }
-  function wpRow(icon, cls, html) {
-    return '<div class="wp-row"><span class="wp-ic ' + cls + '">' + icon + '</span><div>' + html + '</div></div>';
-  }
-  // "New: Trader Shield" announcement — shown while Trader Shield is off, for a week from the
-  // first time this browser sees it, until dismissed. Per-browser convenience only (try/catch).
-  var TS_FIRST_SEEN_KEY = "blackbox.trader-shield.first-seen.v1", TS_DISMISSED_KEY = "blackbox.trader-shield.dismissed.v1";
-  var TS_BANNER_DAYS = 7;
-  function tsBannerDue() {
-    try {
-      if (localStorage.getItem(TS_DISMISSED_KEY)) return false;
-      var first = Number(localStorage.getItem(TS_FIRST_SEEN_KEY) || 0);
-      if (!first) { first = Date.now(); localStorage.setItem(TS_FIRST_SEEN_KEY, String(first)); }
-      return Date.now() - first < TS_BANNER_DAYS * 86400000;
-    } catch (_) { return true; }
-  }
-  function updateTraderShieldBanner(d) {
-    var banner = $("ts-banner");
-    if (banner) banner.hidden = !!(d && d.enabled) || !tsBannerDue();
-  }
-  (function wireTraderShieldBanner() {
-    var close = $("ts-close"), engage = $("ts-engage");
-    if (close) close.addEventListener("click", function () {
-      try { localStorage.setItem(TS_DISMISSED_KEY, String(Date.now())); } catch (_) {}
-      $("ts-banner").hidden = true;
-    });
-    if (engage) engage.addEventListener("click", function () {
-      engage.disabled = true; engage.textContent = "Engaging…";
-      // Only the switch: a first engage protects every supported wallet; an earlier choice of wallets is kept.
-      postJSON("/api/settings", { shields: { trader: { enabled: true } } }).then(function (res) {
-        var ok = res && res.ok && res.body && res.body.ok && traderEngaged(res.body.settings);
-        engage.disabled = false;
-        engage.textContent = ok ? "Engaged ✓" : "Engage Trader Shield";
-        if (typeof showToast === "function") showToast(ok ? "Trader Shield is engaged." : "Couldn't engage Trader Shield.", ok ? "ok" : "err");
-        loadWalletProtection();
-        if (ok) setTimeout(function () { var el = $("wallet-protection"); if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "start" }); }, 400);
-      });
-    });
-  })();
-
-  // Whether a settings view (GET /api/settings, or a save's "settings") shows Trader Shield on.
-  function traderEngaged(view) {
-    var trader = view && view.shields && view.shields.trader;
-    return !!(trader && trader.mode && trader.mode.enabled === true);
-  }
-
-  var wpLast = null;   // the latest panel payload (the events window reads its mode)
-  // The wallets found on this machine, one entry per wallet: {id, wallet, browsers, areas,
-  // profiles, protected} — the panel and Settings both show wallets, not browser profiles.
-  function walletGroups(found) {
-    var groups = [], byId = {};
-    (found || []).forEach(function (w) {
-      var id = w.id || String(w.wallet || "").toLowerCase();
-      var g = byId[id];
-      if (!g) { g = byId[id] = { id: id, wallet: w.wallet, browsers: [], areas: [], profiles: 0, protected: false }; groups.push(g); }
-      if (g.browsers.indexOf(w.browser) < 0) g.browsers.push(w.browser);
-      (w.areas || []).forEach(function (a) { if (g.areas.indexOf(a) < 0) g.areas.push(a); });
-      g.profiles += 1;
-      g.protected = g.protected || !!w.protected;
-    });
-    return groups;
-  }
-  function renderWalletProtection(d) {
-    wpLast = d;
-    updateTraderShieldBanner(d);
-    var section = $("wallet-protection");
-    if (section) section.hidden = !d.enabled;   // only while Web3 wallet protection is on (Settings)
-    if (!d.enabled) return;
-    var block = d.mode === "block";
-    var mode = $("wp-mode");
-    if (mode) {
-      mode.className = "wp-mode " + (block ? "block" : "audit");
-      mode.textContent = block ? "● Blocking" : "Watching only · audit mode";
-      mode.title = block ? "Wallet threats are stopped before the action runs."
-                         : "Wallet threats are recorded and shown, but not stopped. Turn on Block in Settings to stop them.";
-    }
-    var guard = block ? "protected — blocked if the agent reaches for it" : "watched — flagged, not blocked (audit mode)";
-    // One mark per state: secured (blocked) / watched only (audit mode) / not protected / needs attention.
-    var on = block ? ["✓", "ok"] : ["~", "watch"];
-    // One row per WALLET (protected in every browser it is in), listing the browsers — not one
-    // row per browser profile.
-    var found = walletGroups(d.wallets).map(function (g) {
-      var name = g.id === "any-extension" ? "Firefox wallets" : g.wallet;
-      var where = g.id === "any-extension"
-        ? "every extension's storage in " + g.profiles + " Firefox profile" + (g.profiles === 1 ? "" : "s")
-        : g.areas.join(", ");
-      return wpRow(g.protected ? on[0] : "–", g.protected ? on[1] : "none", walletLogoByName(g.wallet) + "<b>" + esc(name) + "</b> · " +
-        esc(g.browsers.join(", ")) + '<div class="wp-sub">' + esc(where) + " — " +
-        (g.protected ? guard : "not selected in Settings, so not protected") + "</div>");
-    });
-    if (!found.length) found.push(wpRow("–", "none", "No wallet found on this machine." +
-      '<div class="wp-sub">Blackbox checks the usual browser and wallet-app folders by name every few minutes; it never opens a vault.</div>'));
-    var col1 = '<div class="wp-col"><div class="wp-h">Found on this machine ' +
-      wpHelp("Wallets whose key store (the encrypted vault holding your keys) exists here: in a browser profile, a desktop wallet's folder (Exodus, Electrum) or the Solana command line's key file. Blackbox only checks that the folder exists — it never opens or reads it.") +
-      "</div>" + found.join("") + "</div>";
-    // Optional fields (LES-018): a daemon older than this page sends neither.
-    var ownAddresses = typeof d.own_addresses === "number" ? d.own_addresses : 0;
-    var exchanges = Array.isArray(d.exchanges) ? d.exchanges.map(String).slice(0, 10) : [];
-    var watch = [
-      wpRow(d.seed_checker ? on[0] : "!", d.seed_checker ? on[1] : "warn", "<b>Seed phrases</b> " +
-        wpHelp("12–24 word recovery phrases are recognised by their built-in checksum. A phrase with a cue like 'seed:', or 18+ words, is blocked in block mode; any phrase sent off the machine is blocked.") +
-        '<div class="wp-sub">' + (d.seed_checker ? "checker on — 2,048-word list, checksum verified" : "checker OFF — the word list did not load") + "</div>"),
-      wpRow(on[0], on[1], "<b>Private keys</b> " +
-        wpHelp("A key written next to a label like PRIVATE_KEY= or pk: is recognised, and so is a Solana key. Handling one is only flagged, because trading configs legitimately hold one; sending it off the machine is blocked — by a command, in a web address, or from a script. A bare 64-character key is recognised when it opens one of the addresses you list in Settings.") +
-        '<div class="wp-sub">labelled and Solana keys · blocked if sent · ' +
-        (ownAddresses ? ownAddresses + " own address" + (ownAddresses === 1 ? "" : "es") + " listed for raw keys"
-                      : "list your addresses in Settings to catch raw keys") + "</div>"),
-      exchanges.length ? wpRow(on[0], on[1], "<b>Exchange API keys</b> " +
-        wpHelp("An exchange's key header may only go to that exchange. Sent anywhere else, it is blocked.") +
-        '<div class="wp-sub">' + esc(exchanges.join(" · ")) + " — only to their own site</div>") : "",
-      exchanges.length ? wpRow(on[0], on[1], "<b>Token approvals</b> " +
-        wpHelp("The approval a drainer needs. An approval to a wallet the verified threat graph lists as a drainer is blocked; any unlimited approval is flagged so you see it.") +
-        '<div class="wp-sub">known drainer blocked · unlimited approvals flagged</div>') : "",
-      wpRow(on[0], on[1], "<b>Protected files</b> " +
-        wpHelp("Your protected file patterns from Settings. Reading a matching file through a file tool or the terminal is flagged critical and blocked in block mode. The macOS keychain is guarded as well while Trader Shield is on.") +
-        '<div class="wp-sub">' + esc((d.protected_paths || []).slice(0, 6).join(" · ")) + ((d.protected_paths || []).length > 6 ? " …" : "") +
-        (d.terminal_reads === "logged" ? "" : " · file tools and terminal") + "</div>"),
-      d.terminal_reads === "logged" ? wpRow("!", "warn", "<b>Not yet:</b> reading a protected file through the terminal (e.g. <code>cat .env</code>) is logged, not blocked " +
-        wpHelp("This Blackbox version checks protected files only for file tools. Update Blackbox to cover the terminal too.")) : ""
-    ];
-    var col2 = '<div class="wp-col"><div class="wp-h">Always watching</div>' + watch.join("") + "</div>";
-    var events = (d.events || []).slice(0, 20).map(function (e) {
-      return '<button type="button" class="wp-ev" data-wev-open="' + esc(e.identifier) + '" data-wev-ts="' + esc(String(e.ts || "")) +
-        '" title="Open the full report"><span class="o ' + esc(e.outcome) + '">' + esc(e.outcome) + "</span><span>" + walletLogoHTML(e) + esc(e.title || e.identifier) +
-        '</span><span class="wp-sub">' + esc(shortWhen(e.ts)) + "</span><span class=\"wp-sub\">" + esc(e.tool ? "via " + e.tool : "") + "</span></button>";
-    });
-    var col3 = '<div class="wp-col"><div class="wp-h">Recent wallet events ' +
-      wpHelp("The latest times your agent reached for a wallet, a seed phrase or a private key, and what Blackbox did. Click one for the full story.") +
-      (events.length ? '<button type="button" class="wev-all" data-wev-open="">View all →</button>' : "") + "</div>" +
-      (events.length ? '<div class="wp-evlist" tabindex="0" aria-label="Recent wallet events (scrolls)">' + events.join("") + "</div>"
-                     : '<div class="wp-sub">Nothing yet — no agent has reached for a wallet or key.</div>') + "</div>";
-    var legend = '<div class="wp-legend" aria-label="What the marks mean">' +
-      '<span><span class="wp-ic ok">✓</span>secured — blocked</span>' +
-      '<span><span class="wp-ic watch">~</span>watched — flagged only (audit mode)</span>' +
-      '<span><span class="wp-ic none">–</span>not protected</span>' +
-      '<span><span class="wp-ic warn">!</span>needs attention</span></div>';
-    $("wp-body").innerHTML = col1 + col2 + col3 + legend;
-  }
-  function loadWalletProtection() {
-    if (!$("wp-body")) return;
-    getJSON("/api/wallet-protection").then(renderWalletProtection).catch(function () {
-      $("wp-body").innerHTML = '<div class="empty" style="padding:24px 20px;">Wallet protection status is unavailable right now.</div>';
-    });
-  }
-  setTimeout(loadWalletProtection, 300);
-  setInterval(loadWalletProtection, 30000);
-
-  // ---------- Trader Shield: the full-screen wallet-events window (GET /api/wallet-protection/events) ----------
-  // Every wallet event with the story of what happened, read from THIS machine's logs only.
-  // Elements are looked up when the window opens (its markup sits after this script).
-  var wev = { events: [], selected: 0, lastFocus: null };
-  function wevWhen(ts) {
-    try { return new Date(ts * 1000).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" }); }
-    catch (_) { return ""; }
-  }
-  function wevOffset(ts, start) {
-    var s = Math.max(0, (ts || 0) - (start || 0));
-    return s < 60 ? "+" + s.toFixed(1) + "s" : "+" + Math.floor(s / 60) + "m " + Math.round(s % 60) + "s";
-  }
-  function wevWallet(e) { return (/\(([^)]+)\)/.exec(String(e.title || "")) || [])[1] || "a wallet"; }
-  function wevStory(e) {
-    var kind = walletKind(e), wallet = wevWallet(e), copying = /^copy/.test(String(e.evidence || ""));
-    var did = kind === "vault" ? (copying ? "copied " + wallet + "'s vault (the encrypted file that holds its keys) by archiving or copying a folder that contains it"
-                                          : "opened " + wallet + "'s vault (the encrypted file that holds its keys)")
-            : kind === "seed" ? "handled a seed phrase — the recovery words that control a whole wallet"
-            : "handled a wallet private key — the key that signs for an account";
-    var where = e.session && e.session.model ? "In a conversation with " + e.session.model : "In an agent session";
-    var asked = e.asked ? where + ", your agent was asked: <q>" + esc(e.asked) + "</q> " : where + ", ";
-    // A blocked action never ran, so the agent "tried to"; a flagged one did run.
-    var verb = e.outcome === "blocked" ? "tried to " : "";
-    var acted = (e.asked ? "It then " : "your agent ") + verb + (e.tool === "terminal" ? (verb ? "run" : "ran") + " a terminal command that would have "
-              : (verb ? "use" : "used") + " its " + esc(e.tool || "tool") + " tool in a way that would have ") + did + ".";
-    var outcome;
-    if (e.outcome === "blocked") outcome = " <b>Blackbox stopped it before it ran</b> — nothing was read, copied or sent, and the agent was told why.";
-    else if (wpLast && wpLast.mode === "audit") outcome = " <b>Blackbox let it run and recorded it</b>, because it is set to watch only (audit mode).";
-    else outcome = " <b>Blackbox flagged it and let it run</b>: handling a key on this machine is allowed (trading tools need it); sending it off the machine is what gets blocked.";
-    var warned = wevWarnings(e);
-    var before = warned.length ? " Just before, Blackbox had flagged <b>" + esc(warned.join("; ")) + "</b> in what the agent was given — " +
-      "a sign the agent was being steered there." : "";
-    return asked + acted + outcome + before;
-  }
-  // Threats met earlier in the same session (e.g. a prompt injection in a page the agent read):
-  // the warning signs that explain why the agent reached for the wallet.
-  function wevWarnings(e) {
-    var titles = [];
-    for (var i = 0; i < (e.timeline || []).length; i++) {
-      var step = e.timeline[i];
-      if (step.this) break;
-      (step.threat_titles || []).forEach(function (t) { if (t && titles.indexOf(t) < 0) titles.push(t); });
-    }
-    return titles.slice(0, 3);
-  }
-  function wevTodo(e) {
-    var kind = walletKind(e), blocked = e.outcome === "blocked", out = [];
-    if (blocked) out.push("Nothing left this machine. No action is needed for this event.");
-    if (kind === "vault" && blocked) out.push("If you asked for this on purpose (a browser backup, say), do it yourself outside the agent — Blackbox will keep agents away from the vault.");
-    if (kind === "vault" && !blocked) out.push("The action ran. Look for the copy it made (an archive or folder) and delete it, then turn on Block in Settings so it is stopped next time.");
-    if (kind !== "vault" && !blocked) out.push("If this " + (kind === "seed" ? "seed phrase" : "key") + " was ever pasted or sent somewhere you don't control, move the funds to a new wallet.");
-    out.push(e.asked ? "If you did not ask for this, check what the agent read just before (a web page, file or message) — it may have been told to." :
-                       "Check what the agent read just before (a web page, file or message) — it may have been told to do this.");
-    return out;
-  }
-  function wevFacts(e) {
-    var rows = walletRows({ identifier: e.identifier, title: e.title, evidence: e.evidence }).map(function (r) { return [r[0], r[1], false]; });
-    if (e.command) rows.push(["Command", e.command, true]);
-    rows.push(["Tool", e.tool || "—", false], ["Decision", e.outcome === "blocked" ? "Blocked before it ran" : "Flagged (it ran)", false],
-              ["Severity", e.severity || "—", false]);
-    var named = false;
-    profileRows(e.profile).forEach(function (r) {
-      if (r[0] === "Outcome" || r[0] === "Seen via" || String(r[1]) === "unknown") return;
-      if (r[0] === "What it's after") named = true;
-      rows.push(r);
-    });
-    if (!named && WEV_GOAL[walletKind(e)]) rows.splice(2, 0, ["What it's after", WEV_GOAL[walletKind(e)], false]);
-    var warned = wevWarnings(e);
-    if (warned.length) rows.splice(2, 0, ["Warning signs before it", warned.join("; "), false]);
-    rows.push(["Rule", e.identifier, true]);
-    var s = e.session || {};
-    rows.push(["Session", [s.agent, s.model, s.status, (s.steps || 0) + " steps", s.id ? "#" + s.id : ""].filter(Boolean).join(" · "), false]);
-    return '<div class="wev-facts">' + rows.map(function (r) {
-      return '<div class="k">' + esc(r[0]) + '</div><div' + (r[2] ? ' class="mono"' : "") + ">" + esc(r[1]) + "</div>";
-    }).join("") + "</div>";
-  }
-  var WEV_KIND = { api: "model", tool: "tool", file: "file", dependency: "install", threat: "threat", session: "session" };
-  // What a wallet event is after, for events recorded before threat profiles named it.
-  var WEV_GOAL = { vault: "the wallet's keys — to empty the wallet", seed: "the wallet itself — the recovery words control every account in it",
-                   key: "the account's signing key — to move its funds" };
-  function wevTimeline(e) {
-    var s = e.session || {}, steps = (e.timeline || []).slice();
-    var start = s.start || (steps[0] && steps[0].ts) || 0;
-    // The session's own edges, so the story has a beginning and an end.
-    if (s.start) steps.unshift({ type: "session", ts: s.start, label: "Session started" });
-    if (s.end && s.status && s.status !== "active") steps.push({ type: "session", ts: s.end, label: "Session ended (" + s.status + ")" });
-    return '<ol class="wev-steps">' + steps.map(function (step) {
-      var flags = (step.threats || []).filter(function (t) { return t !== step.result; });
-      flags = flags.length ? " · " + flags.join(", ") : "";
-      var label = step.type === "tool" ? (step.tool ? esc(step.tool) + ": " : "") + "<code>" + esc(step.label || "") + "</code>" : esc(step.label || "");
-      if (step.type === "threat" && (step.threat_titles || []).length) label += ": <b>" + esc(step.threat_titles.join("; ")) + "</b>";
-      return '<li class="wev-step' + (step.this ? " this" : "") + '"><span class="off">' + esc(wevOffset(step.ts, start)) + '</span><span class="what"><span class="kind">' +
-        esc(WEV_KIND[step.type] || step.type) + "</span>" + label + esc(step.result ? " → " + step.result : "") + esc(flags) +
-        (step.this ? '<span class="here">← this event</span>' : "") + "</span></li>";
-    }).join("") + "</ol>";
-  }
-  function wevRenderDetail() {
-    var e = wev.events[wev.selected], box = $("wev-detail");
-    if (!box) return;
-    if (!e) { box.innerHTML = '<div class="wev-empty">No wallet events yet — no agent has reached for a wallet, a seed phrase or a key.</div>'; return; }
-    box.innerHTML = walletLogoHTML(e, "huge") + '<div><span class="wev-chip ' + esc(e.outcome) + '">' + esc(e.outcome) + "</span></div><h3>" + esc(e.title || e.identifier) + "</h3>" +
-      '<div class="wev-when">' + esc(wevWhen(e.ts)) + (e.tool ? " · via " + esc(e.tool) : "") + "</div>" +
-      '<p class="wev-story">' + wevStory(e) + "</p>" +
-      '<div class="wev-sec"><h4>What to do</h4><ul class="wev-todo">' + wevTodo(e).map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ul></div>" +
-      '<div class="wev-sec"><h4>The details</h4>' + wevFacts(e) + "</div>" +
-      '<div class="wev-sec"><h4>What happened in that session</h4>' + wevTimeline(e) + "</div>";
-    box.scrollTop = 0;
-  }
-  function wevRenderList() {
-    var list = $("wev-list");
-    if (!list) return;
-    list.innerHTML = wev.events.map(function (e, i) {
-      return '<button type="button" class="wev-item' + (e.isNew ? " fresh" : "") + '" data-wev-index="' + i + '"' + (i === wev.selected ? ' aria-current="true"' : "") + '>' +
-        '<span class="wev-chip ' + esc(e.outcome) + '">' + esc(e.outcome) + "</span>" + (e.isNew ? '<span class="wev-new">New</span>' : "") +
-        '<span class="t">' + walletLogoHTML(e) + esc(e.title || e.identifier) + "</span>" +
-        '<span class="m">' + esc(shortWhen(e.ts)) + (e.session && e.session.model ? " · " + esc(e.session.model) : "") + "</span>" +
-        (e.command ? "<code>" + esc(e.command) + "</code>" : "") + "</button>";
-    }).join("");
-  }
-  function wevSelect(i) {
-    wev.selected = Math.max(0, Math.min(i, wev.events.length - 1));
-    wevRenderList(); wevRenderDetail();
-  }
-  function wevPick(identifier, ts) {   // the event the panel row was clicked for (same rule, nearest time)
-    var best = 0, bestGap = Infinity;
-    wev.events.forEach(function (e, i) {
-      var gap = Math.abs((e.ts || 0) - ts);
-      if ((!identifier || e.identifier === identifier) && gap < bestGap) { best = i; bestGap = gap; }
-    });
-    return identifier ? best : 0;
-  }
-  function openWalletEvents(identifier, ts) {
-    var overlay = $("wallet-events");
-    if (!overlay) return;
-    wev.lastFocus = document.activeElement;
-    overlay.hidden = false;
-    lockSettingsPageScroll();
-    $("wev-detail").innerHTML = '<div class="wev-empty">Loading…</div>';
-    $("wev-close").focus();
-    getJSON("/api/wallet-protection/events").then(function (d) {
-      wev.events = (d && Array.isArray(d.events)) ? d.events : [];
-      wevSelect(wevPick(identifier, Number(ts) || 0));
-    }).catch(function () {
-      $("wev-detail").innerHTML = '<div class="wev-empty">The wallet events could not be read right now.</div>';
-    });
-  }
-  // A new wallet event arrived (the main poll saw it): refresh the panel, and the window if it is
-  // open — keeping the event being read selected, and marking the newly arrived ones.
-  function onWalletEvent() {
-    loadWalletProtection();
-    var overlay = $("wallet-events");
-    if (!overlay || overlay.hidden) return;
-    var current = wev.events[wev.selected], newestBefore = wev.events.length ? (wev.events[0].ts || 0) : 0;
-    getJSON("/api/wallet-protection/events").then(function (d) {
-      wev.events = (d && Array.isArray(d.events)) ? d.events : [];
-      wev.events.forEach(function (e) { e.isNew = (e.ts || 0) > newestBefore; });
-      wev.selected = current ? wevPick(current.identifier, current.ts) : 0;
-      wevRenderList();
-      if (!current) wevRenderDetail();
-    }).catch(function () { /* the next poll tries again */ });
-  }
-  function closeWalletEvents() {
-    var overlay = $("wallet-events");
-    if (!overlay || overlay.hidden) return;
-    overlay.hidden = true;
-    unlockSettingsPageScroll();
-    if (wev.lastFocus && wev.lastFocus.focus) wev.lastFocus.focus();
-  }
-  document.addEventListener("click", function (e) {
-    var opener = e.target && e.target.closest ? e.target.closest("[data-wev-open]") : null;
-    if (opener) { openWalletEvents(opener.getAttribute("data-wev-open"), opener.getAttribute("data-wev-ts")); return; }
-    var item = e.target && e.target.closest ? e.target.closest("[data-wev-index]") : null;
-    if (item) { wevSelect(Number(item.getAttribute("data-wev-index"))); return; }
-    if (e.target && e.target.closest && e.target.closest("#wev-close")) closeWalletEvents();
+  // ---------- Shields: banners, cards, the events window and Settings groups ----------
+  // Drawn by static/shields.js from /api/shields and the settings view; no shield is named here.
+  var shieldsUI = BlackboxShields.mount({
+    esc: esc, getJSON: getJSON, postJSON: postJSON, toast: showToast, shortWhen: shortWhen, openSettings: openSettings,
+    lockScroll: lockSettingsPageScroll, unlockScroll: unlockSettingsPageScroll,
+    onSettingsChange: function () { renderPathsUI(); markDirty(); }
   });
-  document.addEventListener("keydown", function (e) { if (e.key === "Escape") closeWalletEvents(); });
-
-  // A wallet event explains itself: what the agent reached for, why that matters, and what asked for it.
-  var WALLET_WHY = {
-    vault: "The vault holds your seed phrase and private keys, encrypted with your wallet password. Copied off this machine it can be cracked offline, and whoever cracks it can empty the wallet.",
-    seed: "A seed phrase IS the wallet: anyone who has the words controls every account in it, on any device, forever.",
-    key: "A private key signs transactions for its account. Whoever holds it can move the funds.",
-    keychain: "The keychain holds every password macOS saved and the key each browser uses to lock its saved passwords and cookies — including your exchange logins.",
-    approval: "A token approval lets the spender move your tokens whenever it likes, without asking again. An unlimited one covers every token you will ever hold of that kind — it is how most wallets are drained.",
-    exchange: "An exchange API key trades — and, if withdrawals are allowed, withdraws — as your account. A key sent anywhere but its own exchange has been handed to someone else."
-  };
-  // The wallet an event is about, recognisable at a glance: a vault event shows that wallet's
-  // logo (served from /wallets/<id>.svg, allowlisted); a seed phrase or key — which belongs to
-  // whichever wallet made it — shows a plain wallet mark.
-  var WALLET_LOGOS = { metamask: "MetaMask", phantom: "Phantom" };
-  var WALLET_GLYPH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
-    '<path d="M19 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0 0 4h14a2 2 0 0 1 2 2v3H17a2 2 0 0 0 0 4h4v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5"/></svg>';
-  function walletLogoByName(name, cls) {
-    var id = String(name || "").toLowerCase().replace(/\s+/g, "");
-    return WALLET_LOGOS[id]
-      ? '<img class="wl ' + (cls || "") + '" src="/wallets/' + id + '.svg" alt="' + esc(WALLET_LOGOS[id]) + '" title="' + esc(WALLET_LOGOS[id]) + '" />'
-      : '<span class="wl wl-mark ' + (cls || "") + '" aria-hidden="true">' + WALLET_GLYPH + "</span>";
-  }
-  function walletLogoHTML(f, cls) {
-    var kind = walletKind(f);
-    if (!kind) return "";
-    return walletLogoByName(kind === "vault" ? (/\(([^)]+)\)/.exec(String(f.title || f.evidence || "")) || [])[1] : "", cls);
-  }
-  function walletKind(f) {
-    var id = String(f.identifier || "");
-    if (/:crypto-wallet$/.test(id)) return "vault";
-    if (id === "secret:seed-phrase") return "seed";
-    if (id === "secret:wallet-private-key" || id === "secret:solana-private-key" || id === "secret:bitcoin-private-key") return "key";
-    if (id === "secret:exchange-api-key") return "exchange";
-    if (/:macos-keychain$/.test(id)) return "keychain";
-    if (id === "secret:token-approval-drainer" || id === "secret:token-approval-unlimited") return "approval";
-    return "";
-  }
-  function walletRows(f) {
-    var kind = walletKind(f);
-    if (!kind) return [];
-    var rows = [];
-    var wallet = (/\(([^)]+)\)/.exec(String(f.title || f.evidence || "")) || [])[1] || "a wallet";
-    var how = /^copy/.test(String(f.evidence || "")) ? "by copying or archiving a folder that contains it" : "by reading it directly";
-    if (kind === "vault") rows.push(["Reached for", wallet + "'s vault (the wallet's key store), " + how]);
-    if (kind === "seed") rows.push(["Reached for", "a seed phrase (wallet recovery words) in what the agent was handling or sending"]);
-    if (kind === "keychain") rows.push(["Reached for", "the macOS keychain (" + how.replace("it directly", "it directly, or with the security tool") + ")"]);
-    if (kind === "approval") rows.push(["Reached for", String(f.identifier || "") === "secret:token-approval-drainer"
-      ? "a token approval to an address listed as a wallet drainer" : "an unlimited token approval (approve MAX or approve-all)"]);
-    if (kind === "exchange") rows.push(["Reached for", "an exchange API key, in the header only that exchange uses, sent to " +
-      "a different site (" + ((/\(([^)]+)\)/.exec(String(f.title || "")) || [])[1] || "an exchange") + ")"]);
-    if (kind === "key") rows.push(["Reached for", String(f.identifier || "") === "secret:solana-private-key"
-      ? "a Solana secret key (what Phantom's \"Export private key\" shows, or a Solana CLI key file)"
-      : String(f.identifier || "") === "secret:bitcoin-private-key"
-      ? "a Bitcoin private key (a WIF key, or an xprv / yprv / zprv extended key that opens the whole wallet)"
-      : "a wallet private key, written next to a key label"]);
-    rows.push(["Why it matters", WALLET_WHY[kind]]);
-    var turns = (f.context && Array.isArray(f.context.turns)) ? f.context.turns : [];
-    for (var i = turns.length - 1; i >= 0; i--) {
-      if (turns[i] && String(turns[i].role || "").toLowerCase() === "user" && turns[i].text) {
-        rows.push(["What led to it", "Asked: “" + String(turns[i].text).slice(0, 280) + "”"]);
-        break;
-      }
-    }
-    return rows;
-  }
 
   // The threat profile a report carries (closed words only), as detail rows. Accepts the
   // community rule's camelCase keys or a local finding's snake_case sighting.
@@ -5926,7 +5527,7 @@
 	        .filter(Boolean).join(" · ");
 	      return '<button type="button" class="ldx-row ldx-open" data-local-idx="' + i + '">' +
 	        '<span class="pill ' + sev + '">' + esc(sev) + '</span>' +
-	        '<span class="ldx-title">' + walletLogoHTML(f) + esc(f.title || f.identifier || "Threat") +
+	        '<span class="ldx-title">' + shieldsUI.findingMark(f) + esc(f.title || f.identifier || "Threat") +
 	        '<br><span class="ldx-time">' + esc(meta2) + '</span></span><span class="ldx-go" aria-hidden="true">›</span></button>';
 	    }).join("");
 	    var more = items.length > LOCAL_CATEGORY_ROWS ? '<div class="modal-empty">' + num(items.length - LOCAL_CATEGORY_ROWS) + ' more of this type.</div>' : "";
@@ -6082,7 +5683,7 @@
     add("Found in", FOUND_IN[f.found_in] || "");
     add("Rule from", RULE_FROM[srcKey(f)]);
     add("About this id", ruleIdMeaning(f.identifier));
-    rows = rows.concat(walletRows(f));
+    rows = rows.concat(shieldsUI.findingRows(f, rows));
     rows = rows.concat(profileRows(f.profile || f.sighting));
     var base = gridHTML(rows);
     var advRefs = findingAdvisoryRefs(f);
@@ -6159,7 +5760,7 @@
     var cat = catKey(f.category || f.type);
     var color = CATS[cat].color;
     overlay.style.setProperty("--accent", color);
-    $("tm-ico").innerHTML = walletLogoHTML(f, "big") || catIconSVG(cat, color);
+    $("tm-ico").innerHTML = shieldsUI.findingMark(f, "big") || catIconSVG(cat, color);
     $("tm-title").textContent = f.title || f.evidence || f.identifier || "Finding";
     $("tm-tags").innerHTML = findingTags(f);
     var id = f.identifier || "";
@@ -6895,7 +6496,7 @@
     var icon = document.createElement("div");
     icon.className = "threat-toast-icon";
     icon.setAttribute("aria-hidden", "true");
-    icon.innerHTML = walletLogoHTML(newest, "big") ||   // a wallet threat names its wallet at a glance
+    icon.innerHTML = shieldsUI.findingMark(newest, "big") ||   // a shield's threat shows its logo at a glance
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></svg>';
 
     var copy = document.createElement("div");
@@ -6959,9 +6560,9 @@
     while (knownFindingOrder.length > MAX_KNOWN_FINDINGS) {
       knownFindingKeys.delete(knownFindingOrder.shift());
     }
-    // Trader Shield is live: a new wallet finding refreshes its panel (and open window) now,
-    // on this 4 s poll, whatever the alert setting — not on the panel's slow 30 s timer.
-    if (fresh.some(function (f) { return !!walletKind(f); })) onWalletEvent();
+    // Shields are live: a new finding a shield claims refreshes its card (and open window) now,
+    // on this 4 s poll, whatever the alert setting — not on the card's slow 30 s timer.
+    shieldsUI.onFindings(fresh);
     if (!threatAlertsEnabled || !fresh.length) return;
     unreadThreatCount += fresh.length;
     updateThreatNotificationUI();
@@ -7027,7 +6628,7 @@
       '<td class="col-time">' + fmtTime(f.time || f.ts || f.timestamp) + '</td>' +
       '<td>' + agentTag(f.framework) + '</td>' +
       '<td><span class="pill ' + sev + '">' + esc(sev) + '</span></td>' +
-      '<td>' + walletLogoHTML(f) + typeTag(f.category || f.type) + '</td>' +
+      '<td>' + shieldsUI.findingMark(f) + typeTag(f.category || f.type) + '</td>' +
       '<td>' + reasonCell(f) + '</td>' +
     '</tr>';
   }
@@ -7570,7 +7171,7 @@
         modePill.textContent = mode + ' mode';
         modePill.title = mode === "block"
           ? "Block mode. Confirmed verifiable-graph threats are blocked."
-          : "Audit mode. Findings are logged locally; nothing is blocked or shared.";
+          : "Audit mode. Findings are logged locally; nothing is blocked.";
       } else {
         modePill.hidden = true;
       }
@@ -7889,9 +7490,7 @@
       report: false, report_min_severity: "high",
       discover: true, osv_lookup: true,
       categories: cats, protected_paths: [],
-      category_labels: {},
-      wallet_protection: false, protected_wallets: [], wallet_addresses: [],
-      wallet_supported: [], wallet_planned: [], trader_loaded: false
+      category_labels: {}
     };
   }
 
@@ -7905,17 +7504,6 @@
     out.report = data.report === true;
     out.discover = data.discover !== false;
     out.osv_lookup = data.osv_lookup !== false;
-    // Trader Shield's group, from the composed settings view: shields.trader = {mode, fields} (every field optional, LES-018).
-    var trader = (data.shields && data.shields.trader && typeof data.shields.trader === "object") ? data.shields.trader : null;
-    var wp = (trader && trader.mode && typeof trader.mode === "object") ? trader.mode : {};
-    out.trader_loaded = !!trader;   // a save sends the Trader section only when it was read
-    out.wallet_protection = wp.enabled === true;
-    if (Array.isArray(wp.wallets)) out.protected_wallets = wp.wallets.slice(0, 20);
-    if (Array.isArray(wp.addresses)) out.wallet_addresses = wp.addresses.slice(0, 50).map(String);
-    var walletField = ((trader && Array.isArray(trader.fields)) ? trader.fields : []).filter(function (f) { return f && f.key === "wallets"; })[0];
-    var options = (walletField && Array.isArray(walletField.options)) ? walletField.options : [];
-    out.wallet_supported = options.filter(function (o) { return o.status === "supported"; });
-    out.wallet_planned = options.filter(function (o) { return o.status === "planned"; }).map(function (o) { return o.name; });
     var cats = (data.categories && typeof data.categories === "object") ? data.categories : {};
     SET_CATS.forEach(function (c) {
       var item = cats[c.key] || {};
@@ -8003,7 +7591,7 @@
         '<button type="button" class="path-del" data-idx="' + i + '" aria-label="Remove ' + esc(p) + '">&#10005;</button>' +
       '</div>';
     }).join("") : '<div class="paths-empty">No protected paths yet.</div>';
-    host.innerHTML = own + shieldPathRows();
+    host.innerHTML = own + shieldsUI.settings.pathRows();   // read-only: what engaged shields guard
     Array.prototype.forEach.call(host.querySelectorAll(".path-del"), function (btn) {
       btn.addEventListener("click", function () {
         var idx = parseInt(btn.getAttribute("data-idx"), 10);
@@ -8044,72 +7632,8 @@
     renderCategoriesUI();
     renderPathsUI();
     renderAdvancedUI();
-    renderWalletUI();
+    shieldsUI.settings.render();
     renderThemeUI();
-  }
-
-  // Web3 wallet protection: the mode switch and the wallets to guard (supported ones tickable,
-  // the rest listed as coming soon).
-  // While Trader Shield is on, the wallet vaults it guards are listed under Protected files too —
-  // read-only: they are not file patterns (the rule recognises each wallet in every browser
-  // profile and inside archives and copies), so they change only with Trader Shield itself.
-  function shieldPathRows() {
-    if (!setState || !setState.wallet_protection) return "";
-    var found = (wpLast && wpLast.wallets) || [];
-    var names = {};
-    (setState.wallet_supported || []).forEach(function (w) { names[w.id] = w.name; });
-    var rows = [];
-    (setState.protected_wallets || []).forEach(function (id) {
-      var name = names[id] || id;
-      var group = walletGroups(found).filter(function (g) { return g.id === id; })[0];
-      var where = group ? group.browsers.join(", ") + " · every profile" : "any browser profile";
-      rows.push('<div class="path-row shield" title="Protected by Trader Shield. Untick this wallet or turn Trader Shield off to stop.">' +
-        "<code>" + esc(name + " vault · " + where) + '</code><span class="path-shield">Trader Shield</span></div>');
-    });
-    return rows.length ? '<div class="paths-shield-note">Also protected while Trader Shield is on — every browser profile, and inside archives and copies:</div>' + rows.join("") : "";
-  }
-  function renderWalletUI() {
-    if (!setState || !$("set-wallet")) return;
-    $("set-wallet").checked = !!setState.wallet_protection;
-    var chosen = setState.protected_wallets || [];
-    var rows = (setState.wallet_supported || []).map(function (w) {
-      return '<label class="wallet-pick"><input type="checkbox" data-wallet="' + esc(w.id) + '"' +
-        (chosen.indexOf(w.id) >= 0 ? " checked" : "") + (setState.wallet_protection ? "" : " disabled") + " /> " +
-        esc(w.name) + "</label>";
-    });
-    (setState.wallet_planned || []).forEach(function (name) {
-      rows.push('<label class="wallet-pick soon"><input type="checkbox" disabled /> ' + esc(name) + ' <span>coming soon</span></label>');
-    });
-    $("set-wallets").innerHTML = rows.join("");
-    var box = $("set-wallet-addresses");
-    if (box && document.activeElement !== box) box.value = (setState.wallet_addresses || []).join("\n");
-    if (box) box.disabled = !setState.wallet_protection;
-    renderAddressNote();
-    renderPathsUI();   // the Trader Shield rows under Protected files follow the switch
-  }
-  // The address box: one 0x address per line; anything else is shown, never sent.
-  var ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
-  function walletAddressList() {
-    var box = $("set-wallet-addresses");
-    var lines = (box ? box.value : (setState.wallet_addresses || []).join("\n")).split(/[\s,]+/).filter(Boolean);
-    var valid = [], bad = [];
-    lines.forEach(function (line) {
-      if (ADDRESS_RE.test(line)) { if (valid.indexOf(line.toLowerCase()) < 0) valid.push(line.toLowerCase()); }
-      else bad.push(line);
-    });
-    return { valid: valid.slice(0, 50), bad: bad };
-  }
-  function renderAddressNote() {
-    var note = $("set-wallet-addresses-note");
-    if (!note) return;
-    var list = walletAddressList();
-    note.className = "set-addresses-note" + (list.bad.length ? " bad" : "");
-    var pastedKey = list.bad.some(function (b) { return /^(0x)?[0-9a-fA-F]{64}$/.test(b); });
-    note.textContent = pastedKey
-      ? "That looks like a PRIVATE KEY, not an address — it is not saved. Remove it, and only ever list public addresses."
-      : list.bad.length
-      ? "Not an address (left out): " + list.bad.slice(0, 3).map(function (b) { return b.slice(0, 14) + (b.length > 14 ? "…" : ""); }).join(", ")
-      : (list.valid.length ? list.valid.length + " address" + (list.valid.length === 1 ? "" : "es") + " — raw keys that open them are recognised." : "");
   }
 
   function setStatus(msg, kind) {
@@ -8140,11 +7664,7 @@
       report: !!setState.report,
       categories: cats,
       protected_paths: setState.protected_paths.slice(0, 100),
-      shields: setState.trader_loaded ? { trader: {
-        enabled: !!setState.wallet_protection,
-        wallets: (setState.protected_wallets || []).slice(0, 20),
-        addresses: walletAddressList().valid
-      } } : {}
+      shields: shieldsUI.settings.payload()   // only the shields the settings view carried
     };
   }
 
@@ -8159,8 +7679,21 @@
     });
   }
 
+  // Shown when this dashboard may not change anything: it is opened through a read-only view (one
+  // that refuses /api/session — e.g. a demo or proxy), so every save would be refused.
+  var READ_ONLY_VIEW_MESSAGE = "Changes are switched off in this view: this dashboard is opened read-only here. " +
+    "Open it on the machine itself (http://127.0.0.1:9700) to change settings.";
+
   function postJSON(url, body) {
-    return getSessionToken().then(function (tok) {
+    return getSessionToken().catch(function (err) {
+      // A refused session key is a read-only view, not a network failure: say so to every caller.
+      if (err && /HTTP 40[13]/.test(String(err.message))) {
+        var refused = new Error(READ_ONLY_VIEW_MESSAGE);
+        refused.readOnly = true;
+        throw refused;
+      }
+      throw err;
+    }).then(function (tok) {
       return fetch(url, {
         method: "POST",
         headers: {
@@ -8189,20 +7722,21 @@
       var result = res.body || {};
       if (res.ok && result.ok) {
         // refresh in-memory settings from the server's authoritative view
-        if (result.settings) setState = normalizeSettings(result.settings);
+        if (result.settings) { setState = normalizeSettings(result.settings); shieldsUI.settings.load(result.settings.shields); }
         renderAllSettings();
         setStatus("");
         closeSettings();
         showToast("Changes saved successfully.", "ok");
-        if (typeof loadWalletProtection === "function") loadWalletProtection();   // the panel shows/hides with the mode
+        shieldsUI.refresh();   // a shield's card shows/hides with its mode
+        poll();                // the mode badge and the Threat sharing tile, now — not at the next 4 s poll
       } else {
         var errs = Array.isArray(result.errors) && result.errors.length
           ? result.errors.join(" · ")
           : ("Could not save (HTTP " + res.status + ").");
         setStatus(errs, "err");
       }
-    }).catch(function () {
-      setStatus("Network error. Settings not saved.", "err");
+    }).catch(function (err) {
+      setStatus(err && err.readOnly ? err.message : "Network error. Settings not saved.", "err");
     }).then(function () {
       setSaving = false;
       btn.disabled = false;
@@ -8221,8 +7755,10 @@
 
   function loadSettings(force) {
     if (setLoaded && !force) { return Promise.resolve(); }
+    if (force) setLoaded = false;   // until this read lands, Save must not send what was loaded before
     return getJSON("/api/settings").then(function (data) {
       setState = normalizeSettings(data);
+      shieldsUI.settings.load(data && data.shields);
       window.__setLabels = setState.category_labels;   // remembered for Reset
       setLoaded = true;
       renderAllSettings();
@@ -8230,7 +7766,7 @@
     }).catch(function () {
       if (!setState) setState = defaultSetState();
       renderAllSettings();
-      setStatus("Could not load settings. Showing defaults.", "err");
+      setStatus("Could not load the current settings, so Save is off (nothing old is written back). Close and open Settings to try again.", "err");
     });
   }
 
@@ -8257,8 +7793,17 @@
     lockSettingsPageScroll();
     overlay.classList.add("open");
     overlay.setAttribute("aria-hidden", "false");
-    if (setState) renderAllSettings(); else setStatus("Loading settings…");
-    loadSettings(false);
+    if (setState) renderAllSettings();
+    // Always re-read the server's settings: Engage on a shield's banner, `blackbox report
+    // --withdraw-consent`, the CLI or another tab may have changed them since this page last
+    // read them, and Save sends the WHOLE form — a stale form would write the old values back.
+    // Save stays off until the fresh read lands (and stays off if it fails).
+    var saveButton = $("set-save");
+    if (saveButton) saveButton.disabled = true;
+    setStatus("Loading settings…");
+    loadSettings(true).then(function () {
+      if (saveButton && !setSaving) saveButton.disabled = !setLoaded;
+    });
     var close = $("set-close");
     if (close) close.focus();
   }
@@ -8284,13 +7829,6 @@
     overlay.__wired = true;
 
     $("settings-open").addEventListener("click", openSettings);
-    // The Trader Shield panel opens Settings straight at its own section.
-    var wpEdit = $("wp-edit");
-    if (wpEdit) wpEdit.addEventListener("click", function () {
-      openSettings();
-      var group = $("set-trader-shield");
-      if (group && group.scrollIntoView) setTimeout(function () { group.scrollIntoView({ block: "start" }); }, 60);
-    });
     $("set-close").addEventListener("click", cancelSettings);
     $("set-cancel").addEventListener("click", cancelSettings);
     overlay.addEventListener("click", function (e) { if (e.target === overlay) cancelSettings(); });
@@ -8326,19 +7864,6 @@
     // advanced toggles
     $("set-discover").addEventListener("change", function () {
       if (!setState) return; setState.discover = this.checked; markDirty();
-    });
-    $("set-wallet").addEventListener("change", function () {
-      if (!setState) return; setState.wallet_protection = this.checked; renderWalletUI(); markDirty();
-    });
-    if ($("set-wallet-addresses")) $("set-wallet-addresses").addEventListener("input", function () {
-      if (!setState) return; setState.wallet_addresses = walletAddressList().valid; renderAddressNote(); markDirty();
-    });
-    $("set-wallets").addEventListener("change", function (e) {
-      var id = e.target && e.target.getAttribute("data-wallet");
-      if (!setState || !id) return;
-      var list = (setState.protected_wallets || []).filter(function (w) { return w !== id; });
-      if (e.target.checked) list.push(id);
-      setState.protected_wallets = list; renderPathsUI(); markDirty();
     });
     $("set-osv").addEventListener("change", function () {
       if (!setState) return; setState.osv_lookup = this.checked; markDirty();
@@ -8688,24 +8213,6 @@
 </div>
 
 <!-- Settings panel — reuses the .modal-overlay / .modal system -->
-<!-- Trader Shield: every wallet event, read from this machine's logs only (wired lazily by the script above) -->
-<div class="wev-overlay" id="wallet-events" hidden role="dialog" aria-modal="true" aria-labelledby="wev-title">
-  <div class="wev-head">
-    <div>
-      <div class="wev-kicker">Trader Shield · Beta</div>
-      <h2 id="wev-title">Wallet events</h2>
-      <div class="wev-note">Every time your agent reached for a wallet, a seed phrase or a private key — what it was doing, and what Blackbox did.</div>
-    </div>
-    <button type="button" class="wev-close" id="wev-close" aria-label="Close wallet events">✕</button>
-  </div>
-  <div class="wev-private" role="note"><span aria-hidden="true">🔒</span><span><b>Private to this machine.</b> This report is read from Blackbox's own logs on this computer.
-    Wallet events are never shared with the community graph — not even a summary — and secrets in commands or messages were removed before they were written down.</span></div>
-  <div class="wev-body">
-    <nav class="wev-list" id="wev-list" aria-label="Wallet events"></nav>
-    <article class="wev-detail" id="wev-detail" aria-live="polite"></article>
-  </div>
-</div>
-
 <div class="modal-overlay" id="settings-modal" aria-hidden="true">
   <div class="modal settings-modal" role="dialog" aria-modal="true" aria-labelledby="set-title">
     <button class="modal-close" id="set-close" aria-label="Close settings">&#10005;</button>
@@ -8795,34 +8302,8 @@
         </div>
       </div>
 
-      <!-- Web3 wallet protection (trader rules) -->
-      <div class="set-group" id="set-trader-shield">
-        <div class="set-glabel">Trader Shield · Beta</div>
-        <div class="set-row">
-          <div class="set-rl">
-            <div class="set-rt">Engage Trader Shield</div>
-            <div class="set-rh"><a href="/trader-shield" class="ts-link">What is Trader Shield?</a> Keep your AI agent away from your wallets: it cannot open a wallet's key store (the encrypted vault in your browser or wallet app), and seed phrases and private keys it handles are flagged, and blocked if it tries to send them off this machine. Your own trading tools keep working. Seed phrases and keys are always kept out of Blackbox's logs, whether this is on or off.</div>
-          </div>
-          <div class="set-rc">
-            <label class="set-toggle"><input type="checkbox" id="set-wallet" /><span class="set-track"></span></label>
-          </div>
-        </div>
-        <div class="set-row">
-          <div class="set-rl">
-            <div class="set-rt">Wallets to protect</div>
-            <div class="set-rh">Choose the wallets installed on this machine.</div>
-            <div class="wallet-picks" id="set-wallets"></div>
-          </div>
-        </div>
-        <div class="set-row">
-          <div class="set-rl">
-            <div class="set-rt">Your wallet addresses <span class="set-optional">optional</span></div>
-            <div class="set-rh">A raw private key is 64 characters that look exactly like a transaction hash. List your own public addresses (0x…, one per line) and Trader Shield recognises a raw key that opens one of them — and blocks it if your agent tries to send it out. Addresses stay on this machine; they are never logged, reported or shared.</div>
-            <textarea id="set-wallet-addresses" class="set-addresses" rows="3" spellcheck="false" autocomplete="off" placeholder="0x…"></textarea>
-            <div class="set-addresses-note" id="set-wallet-addresses-note"></div>
-          </div>
-        </div>
-      </div>
+      <!-- One group per shield, drawn by static/shields.js from the settings view's shields -->
+      <div id="set-shields"></div>
 
       <!-- Advanced -->
       <div class="set-group">
@@ -8830,7 +8311,7 @@
         <div class="set-row">
           <div class="set-rl">
             <div class="set-rt">Community sharing</div>
-            <div class="set-rh">On by default. When your agent meets a threat the verified graph already lists, share a privacy-safe statement with the community graph: the threat's identifier and type, the tool that met it, whether it was blocked or flagged, and what the threat targets. Your prompts, commands and files never leave this machine. Switch off any time.</div>
+            <div class="set-rh">Off until you turn it on. Once on, when your agent meets a threat the verified graph already lists, share a privacy-safe statement with the community graph: the threat's identifier and type, the tool that met it, whether it was blocked or flagged, and what the threat targets. Your prompts, commands and files never leave this machine. Turning it on records your agreement to the reporter terms; switch off any time.</div>
           </div>
           <div class="set-rc">
             <label class="set-toggle"><input type="checkbox" id="set-report" /><span class="set-track"></span></label>

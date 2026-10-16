@@ -2,6 +2,59 @@
   "id": "trust-wallet",
   "name": "Trust Wallet",
   "kind": "browser-extension",
-  "status": "planned",
-  "order": 130
+  "status": "supported",
+  "order": 130,
+  "verified": "2026-10-16",
+  "source": "Chrome Web Store install on Ubuntu 24.04, Chrome 155 (2026-10-16): the real extension wrote its storage under this id",
+  "stores": {
+    "chromium": [
+      "egjidjbpglichdcondbcbdnbeeppgdph"
+    ]
+  },
+  "logo": {
+    "file": "logo.svg",
+    "terms": "NOTICE.md",
+    "source": "https://trustwallet.com/icon.svg"
+  },
+  "availability": [
+    {
+      "store": "Chrome Web Store",
+      "browsers": [
+        "Chrome",
+        "Brave",
+        "Edge",
+        "Opera",
+        "Vivaldi",
+        "Arc"
+      ],
+      "state": "protected",
+      "url": "https://chromewebstore.google.com/detail/egjidjbpglichdcondbcbdnbeeppgdph",
+      "source": "https://trustwallet.com/download"
+    },
+    {
+      "store": "Firefox Add-ons",
+      "browsers": [
+        "Firefox"
+      ],
+      "state": "not-offered",
+      "source": "https://trustwallet.com/download",
+      "note": "Trust Wallet's download page offers Chrome only"
+    },
+    {
+      "store": "Edge Add-ons",
+      "browsers": [
+        "Edge"
+      ],
+      "state": "not-found",
+      "note": "No Edge Add-ons listing found; Edge installs it from the Chrome Web Store"
+    },
+    {
+      "store": "Safari",
+      "browsers": [
+        "Safari"
+      ],
+      "state": "not-offered",
+      "note": "No desktop Safari extension from the publisher"
+    }
+  ]
 }

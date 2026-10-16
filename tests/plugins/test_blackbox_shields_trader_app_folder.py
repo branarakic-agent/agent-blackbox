@@ -1,5 +1,5 @@
 """Trader Shield's desktop-app and cli-key-file kinds (shields/trader/detectors/app_folder.py) —
-moved from test_blackbox_app_wallets.py in shields S4b.
+moved from test_blackbox_app_wallets.py.
 
 The layouts are copied from the real software installed on bench bb-trader-1
 (2026-10-13): Exodus 26.10.7 (.deb) wrote ``~/.config/Exodus/exodus.wallet/{seed.seco,
@@ -7,11 +7,11 @@ passphrase.json,storage.seco}``; Electrum 4.8.2 (AppImage) wrote
 ``~/.electrum/wallets/default_wallet`` and ``~/.electrum/testnet/wallets/default_wallet``;
 the Solana CLI 4.3.0 wrote ``~/.config/solana/id.json`` and a ``cli/config.yml`` naming it.
 
-Each input goes through the NEW detector, ``detectors.detect``; until S5b deletes the old
-module it also goes through ``detection.detect_wallet_files`` and the two must give
-identical findings apart from the added ``pack`` field (:func:`_detect`). The attack
-table's Exodus, Electrum and Solana CLI rows run through both on Linux, macOS and
-Windows layouts.
+Each input goes through the detector, ``detectors.detect``. The old
+``detection.detect_wallet_files`` gave identical findings apart from the added ``pack``
+field until the old module was deleted; the attack table's Exodus, Electrum and Solana CLI rows and
+each layout's own paths stay pinned, on Linux, macOS and Windows layouts, to what both
+gave on that last run.
 """
 
 from __future__ import annotations
@@ -24,14 +24,13 @@ import threading
 import pytest
 
 from _trader_attack_table import ATTACKS
-from plugins.blackbox.detection import app_wallets, wallet_files
-from plugins.blackbox.detection.wallet_files import detect_wallet_files
 from plugins.blackbox.shields.contract import Pack
 from plugins.blackbox.shields.trader import detectors
 from plugins.blackbox.shields.trader import mode as trader_mode
 from plugins.blackbox.shields.trader.detectors import app_folder
 from plugins.blackbox.shields.trader.detectors.app_folder import AppFolderMatcher
 from plugins.blackbox.shields.trader.detectors.browser_extension import Owner
+from test_blackbox_shields_trader_vault import RECORDED_ROW_PACKS
 
 EVERY_PACK = trader_mode.build(enabled=True)
 APP_PACKS = {pack.id for pack in trader_mode.wallet_packs()
@@ -39,23 +38,16 @@ APP_PACKS = {pack.id for pack in trader_mode.wallet_packs()
 
 
 def _reset():
-    for cache in (app_wallets.SOLANA_KEY_FILE, app_folder.POINTER_FILES,
-                  wallet_files.EXISTING_STORES, detectors.EXISTING_STORES):
+    for cache in (app_folder.POINTER_FILES, detectors.EXISTING_STORES):
         cache.reset()
 
 
-def _same_apart_from_pack(new, old):
-    for finding in new:
-        assert finding.fields.get("pack") == finding.fields["wallet"]
-    stripped = [dataclasses.replace(f, fields={k: v for k, v in f.fields.items() if k != "pack"}) for f in new]
-    assert stripped == old
-
-
 def _detect(tool, args, active=EVERY_PACK):
-    """The new detector's findings, after checking the old one agrees (equivalence)."""
-    new = detectors.detect(tool, args, active)
-    _same_apart_from_pack(new, detect_wallet_files(tool, args))
-    return new
+    """The detector's findings, after checking that each names its pack by the wallet's id."""
+    found = detectors.detect(tool, args, active)
+    for finding in found:
+        assert finding.fields.get("pack") == finding.fields["wallet"]
+    return found
 
 
 def _wallets(tool, args):
@@ -282,7 +274,7 @@ def test_the_app_folder_validator_sits_beside_its_matcher(manifest, problem):
     assert answer is None if problem is None else problem in answer
 
 
-# -- the attack table's app rows on Linux, macOS and Windows layouts, through both detectors ----
+# -- the attack table's app rows on Linux, macOS and Windows layouts, pinned to both detectors ----
 
 APP_ROWS = [row for row in ATTACKS   # page rows with their tool calls (_trader_attack_table)
             if row["proof"] == "test" and row["group"] == "vault" and set(row["targets"]) & APP_PACKS]
@@ -326,14 +318,30 @@ def _windows(home, monkeypatch):
 
 LAYOUTS = {"linux": _linux, "linux-xdg": _linux_xdg, "macos": _macos, "windows": _windows}
 
+#: Recorded on the last run where the old and new detectors agreed: the pack each layout's own
+#: paths name (in the order the layout lists them), and what the two archive commands name.
+RECORDED_OWN_PATH_PACKS = {
+    "linux": ["exodus", "electrum", "solana-cli", "solana-cli"],
+    "linux-xdg": ["exodus", "solana-cli", "solana-cli"],
+    "macos": ["exodus", "exodus", "electrum"],
+    "windows": ["exodus", "electrum", "electrum", "electrum"],
+}
+EVERY_APP = ["electrum", "exodus", "solana-cli"]
+RECORDED_ARCHIVE_PACKS = {   # (tar of the home folder, zip of ~/AppData ~/Library ~/.config)
+    "linux": (EVERY_APP, ["exodus", "solana-cli"]),
+    "linux-xdg": (EVERY_APP, []),
+    "macos": (EVERY_APP, ["exodus", "solana-cli"]),
+    "windows": (EVERY_APP, EVERY_APP),
+}
+
 
 @pytest.fixture(params=sorted(LAYOUTS))
 def layout(request, tmp_path, monkeypatch):
-    """One OS layout of the three apps inside a temporary HOME; yields that layout's own paths."""
+    """One OS layout of the three apps inside a temporary HOME; yields its name and its own paths."""
     monkeypatch.setenv("HOME", str(tmp_path))
     paths = LAYOUTS[request.param](tmp_path, monkeypatch)
     _reset()
-    yield paths
+    yield request.param, paths
     _reset()
 
 
@@ -344,16 +352,20 @@ def test_the_attack_table_has_the_app_rows():
 
 
 @pytest.mark.parametrize("row", APP_ROWS, ids=[row["id"] for row in APP_ROWS])
-def test_every_app_row_gives_the_same_findings_on_every_layout(layout, row):
-    new = _detect(row["tool"], row["args"])
+def test_every_app_row_gives_the_recorded_findings_on_every_layout(layout, row):
+    found = _wallets(row["tool"], row["args"])
     # The rows name ~/.config paths: with $XDG_CONFIG_HOME moved elsewhere, Exodus is not there.
-    if row["outcome"] == "blocked" and "XDG_CONFIG_HOME" not in os.environ:
-        assert new, row["id"]
+    moved_away = row["id"] == "exodus-wallet-zip" and "XDG_CONFIG_HOME" in os.environ
+    assert found == ([] if moved_away else sorted(RECORDED_ROW_PACKS[row["id"]])), layout[0]
+    if row["outcome"] == "blocked" and not moved_away:
+        assert found, row["id"]
 
 
-def test_each_layouts_own_paths_give_the_same_findings(layout):
-    for path in layout:
-        assert _detect("read_file", {"path": path}), path
-        _detect("terminal", {"command": f"cat '{path}'"})
-    _detect("terminal", {"command": "tar czf home.tgz ~"})
-    _detect("terminal", {"command": "zip -r all.zip ~/AppData ~/Library ~/.config"})
+def test_each_layouts_own_paths_give_the_recorded_findings(layout):
+    name, paths = layout
+    for path, pack in zip(paths, RECORDED_OWN_PATH_PACKS[name], strict=True):
+        assert _wallets("read_file", {"path": path}) == [pack], path
+        assert _wallets("terminal", {"command": f"cat '{path}'"}) == [pack], path
+    home_tar, config_zip = RECORDED_ARCHIVE_PACKS[name]
+    assert _wallets("terminal", {"command": "tar czf home.tgz ~"}) == home_tar
+    assert _wallets("terminal", {"command": "zip -r all.zip ~/AppData ~/Library ~/.config"}) == config_zip

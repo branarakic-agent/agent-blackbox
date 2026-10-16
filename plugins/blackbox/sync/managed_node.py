@@ -20,7 +20,7 @@ from typing import Dict, List, Optional
 from ..kernel import constants
 from ..kernel.config import BlackboxConfig
 from ..kernel.dkg_client import DkgClient, DkgError
-from . import node_process, process_limits
+from . import node_process, node_service, process_limits
 # The node's sync profile lives in node_profile. These names stay reachable as
 # managed_node.<name>: sync/command.py calls them through this module and tests
 # patch them here.
@@ -217,8 +217,7 @@ def expected_node_settings(cfg: BlackboxConfig) -> dict[str, str]:
     re-running the installer writes it into the unit.
     """
     expected = node_sync_settings(cfg)
-    pid = _daemon_pid(cfg)
-    if pid is None or _systemd_unit_of(pid) is None:
+    if not _runs_under_a_service(cfg, _daemon_pid(cfg)):
         return expected
     missing = sorted(name for name in _DKG_ENV_ONLY_SETTINGS if name in expected)
     if missing:
@@ -226,6 +225,16 @@ def expected_node_settings(cfg: BlackboxConfig) -> dict[str, str]:
             "blackbox: the DKG node runs under a service unit; %s can only be set in the unit's "
             "environment — re-run the Blackbox installer to update the unit", ", ".join(missing))
     return {name: value for name, value in expected.items() if name not in _DKG_ENV_ONLY_SETTINGS}
+
+
+def _runs_under_a_service(cfg: BlackboxConfig, pid: Optional[int]) -> bool:
+    """Whether the running node *pid* was started by a service (so it has the service's environment)."""
+    if pid is None:
+        return False
+    if _systemd_unit_of(pid) is not None:
+        return True
+    service = node_service.registered(cfg)
+    return service is not None and service.owns(pid)
 
 
 def _daemon_pid(cfg: BlackboxConfig) -> Optional[int]:
@@ -241,62 +250,23 @@ def _restart_managed_dkg(cfg: BlackboxConfig) -> None:
     process (systemd records a failure and restarts it), and the unit's
     ``ExecStartPre`` ``dkg stop`` then kills the detached daemon this function
     just started, so the node flaps and in-flight syncs hit a dead API
-    (KI-059/KI-065).
+    (KI-059/KI-065). When a service is REGISTERED for this install's node (the
+    macOS LaunchAgent, or an enabled unit while no node runs under it), the
+    restart goes through it too — a node started here instead is one the service
+    cannot supervise, and launchd's copy then fails "Daemon already running" for
+    ever (KI-426). See :func:`_restart_through_service`.
     """
     env = _dkg_sync_environment(cfg)
     command = str(cfg.dkg_bin)
     old_pid = _daemon_pid(cfg)
     unit = _systemd_unit_of(old_pid) if old_pid is not None else None
-    if unit is not None:
-        try:
-            restarted = subprocess.run(
-                ["systemctl", "restart", unit],
-                stdin=subprocess.DEVNULL, capture_output=True,
-                text=True,
-                timeout=120,
-                check=False,
-            )
-        except (OSError, subprocess.SubprocessError) as exc:
-            raise RuntimeError(f"could not restart {unit}: {exc}") from exc
-        if restarted.returncode != 0:
-            detail = (restarted.stderr or restarted.stdout or "").strip()
-            raise RuntimeError(
-                f"could not restart {unit}" + (f": {detail[-500:]}" if detail else "")
-            )
-        _wait_for_managed_dkg_ready(cfg, "")
+    service = node_service.systemd_unit(unit) if unit is not None else node_service.registered(cfg)
+    if service is not None:
+        # a node in the unit's cgroup is the unit's own: nothing stray to stop first
+        _restart_through_service(cfg, service, None if unit is not None else old_pid, env, command)
         return
     try:
-        subprocess.run(
-            [command, "stop"],
-            env=env,
-            stdin=subprocess.DEVNULL, capture_output=True,
-            text=True,
-            timeout=60,
-            check=False,
-        )
-        # ``dkg stop`` can return after its ten-second API wait while the
-        # worker is still draining sync jobs. Starting immediately then sees
-        # the old PID and refuses with "Daemon already running". Wait for the
-        # exact managed worker and API listener to disappear first.
-        stopped = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
-        stop_deadline = time.monotonic() + 45
-        while time.monotonic() < stop_deadline:
-            pid_running = old_pid is not None and node_process.is_managed_daemon(cfg, old_pid)
-            if not pid_running and not stopped.reachable(timeout=0.5):
-                break
-            time.sleep(0.5)
-        else:
-            raise RuntimeError("managed DKG node did not finish stopping")
-
-        # A forced worker exit can leave its PID file behind. Remove it only
-        # after proving that exact managed process is no longer alive.
-        if old_pid is not None:
-            if not node_process.is_managed_daemon(cfg, old_pid):
-                try:
-                    (Path(cfg.dkg_home) / "daemon.pid").unlink()
-                except FileNotFoundError:
-                    pass
-
+        _stop_managed_dkg(cfg, old_pid, env, command)
         started = subprocess.run(
             [command, "start"],
             env=env,
@@ -315,6 +285,64 @@ def _restart_managed_dkg(cfg: BlackboxConfig) -> None:
             + (f": {detail[-500:]}" if detail else "")
         )
     _wait_for_managed_dkg_ready(cfg, (started.stderr or started.stdout or "").strip())
+
+
+def _restart_through_service(cfg: BlackboxConfig, service: node_service.NodeService, stray_pid: Optional[int],
+                             env: dict[str, str], command: str) -> None:
+    """Restart the node through *service* and wait until it answers.
+
+    *stray_pid*: a running node that may have been started OUTSIDE the service (by an install or an
+    older Blackbox), or None. Such a node is stopped first: the service's ``dkg start --foreground``
+    refuses while it lives.
+    """
+    try:
+        if stray_pid is not None and not service.owns(stray_pid):
+            _stop_managed_dkg(cfg, stray_pid, env, command)
+        restarted = service.restart()
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError(f"could not restart {service.name}: {exc}") from exc
+    if restarted.returncode != 0:
+        detail = (restarted.stderr or restarted.stdout or "").strip()
+        raise RuntimeError(f"could not restart {service.name}" + (f": {detail[-500:]}" if detail else ""))
+    _wait_for_managed_dkg_ready(cfg, "")
+
+
+def _stop_managed_dkg(cfg: BlackboxConfig, old_pid: Optional[int], env: dict[str, str], command: str) -> None:
+    """Stop the node with ``dkg stop`` and wait until its process and API are gone (≤ 45 s).
+
+    Raises RuntimeError when it does not finish stopping; OSError / SubprocessError from the
+    stop command pass through to the caller.
+    """
+    subprocess.run(
+        [command, "stop"],
+        env=env,
+        stdin=subprocess.DEVNULL, capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    # ``dkg stop`` can return after its ten-second API wait while the
+    # worker is still draining sync jobs. Starting immediately then sees
+    # the old PID and refuses with "Daemon already running". Wait for the
+    # exact managed worker and API listener to disappear first.
+    stopped = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
+    stop_deadline = time.monotonic() + 45
+    while time.monotonic() < stop_deadline:
+        pid_running = old_pid is not None and node_process.is_managed_daemon(cfg, old_pid)
+        if not pid_running and not stopped.reachable(timeout=0.5):
+            break
+        time.sleep(0.5)
+    else:
+        raise RuntimeError("managed DKG node did not finish stopping")
+
+    # A forced worker exit can leave its PID file behind. Remove it only
+    # after proving that exact managed process is no longer alive.
+    if old_pid is not None:
+        if not node_process.is_managed_daemon(cfg, old_pid):
+            try:
+                (Path(cfg.dkg_home) / "daemon.pid").unlink()
+            except FileNotFoundError:
+                pass
 
 
 def _wait_for_managed_dkg_ready(cfg: BlackboxConfig, detail: str) -> None:

@@ -50,7 +50,6 @@ from .detectors import (
 )
 from .paths.shell_files import shell_file_args
 from .shell_shapes import ESCALATION_SHAPES, SHELL_TOOLS, command_from_args
-from .wallet_files import found_wallets
 
 __all__ = [
                              "ANSWERED_BY_FALLBACK",
@@ -80,7 +79,6 @@ __all__ = [
                              "discover_dependency_candidates",
                              "discover_injection",
                              "file_access_arg",
-                             "found_wallets",
                              "injection_scan_text",
                              "osv",
                              "parse_dependency_installs",

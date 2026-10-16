@@ -12,9 +12,10 @@ multi-machine harness; every report is built by the product's own writer.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import timedelta
 
 import pytest
+from _clock import utc_today
 from _community_rows import Reporter
 from _machines import share_report
 from test_blackbox_curate_community import ADDRESS, Curators, _listing
@@ -25,7 +26,7 @@ from plugins.blackbox.curate.ladder import novelty_facts, outcomes
 from plugins.blackbox.curate.proposal import ProposalStore
 from plugins.blackbox.kernel.signing.statement_order import CuratorStatement as Kind
 
-TODAY = date.today()
+TODAY = utc_today()
 LONG_AGO = (TODAY - timedelta(days=30)).isoformat()      # a reporter's first report: more than 14 days back
 RECENT = (TODAY - timedelta(days=3)).isoformat()
 THREATS = [f"ioc:ip:198.51.100.{i}" for i in range(1, 7)]

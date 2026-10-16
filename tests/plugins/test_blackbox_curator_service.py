@@ -20,6 +20,7 @@ from datetime import date, timedelta
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from _clock import utc_today
 from _community_rows import GRAPH, NETWORK, Reporter
 from _machines import SWM, share_report
 from test_blackbox_curate_community import CFG, EVIDENCE, Curators, _listing
@@ -48,7 +49,7 @@ from plugins.blackbox.ruleset import community_tier, compiler
 
 PKG = "dep:npm:evil-pkg@1.0.0"
 IP = "ioc:ip:203.0.113.7"
-TODAY = date.today().isoformat()
+TODAY = utc_today().isoformat()
 FOUND = OwnCheck(Lookup.FOUND, "MAL-2026-1")
 CLEAN, UNAVAILABLE = OwnCheck(Lookup.CLEAN), OwnCheck(Lookup.UNAVAILABLE)
 DAY = 86_400
@@ -333,7 +334,7 @@ def test_the_service_never_co_signs_what_only_a_person_may_decide(svc, what):
         "a rejection": (Kind.REJECTION, PKG, {"reason": "benign"}, ""),
         "a partner grant": (Kind.COUNTED_AUTHORS, f"author:{bob.author}", _listing(bob, **{"class": "partner", "org": "acme"}), ""),
         "a collapse": (Kind.COUNTED_AUTHORS, f"author:{bob.author}", _listing(bob, org="one-operator"), ""),
-        "a pause": (Kind.PAUSE, "curator", {"until": (date.today() + timedelta(days=3)).isoformat()}, ""),
+        "a pause": (Kind.PAUSE, "curator", {"until": (utc_today() + timedelta(days=3)).isoformat()}, ""),
         "a confirmation of an indicator": (Kind.CONFIRMATION, IP, {}, EVIDENCE),
         "a confirmation citing a reproduction": (Kind.CONFIRMATION, PKG, {}, "reproduced:" + "ab" * 32),
         "a listing its ledger does not call for": (Kind.COUNTED_AUTHORS, f"author:{bob.author}", _listing(bob), ""),
@@ -553,7 +554,7 @@ def test_evidence_arriving_during_a_deferral_confirms_the_threat(svc):
 
 def _graduating(svc, names, reporter, *, days_ago=30):
     """On each named curator machine, *reporter* has five novel confirmed reports and a first report *days_ago* back."""
-    first = (date.today() - timedelta(days=days_ago)).isoformat()
+    first = (utc_today() - timedelta(days=days_ago)).isoformat()
     for name in names:
         with svc.machines[name]:
             book = reputation.ReputationLedger()
@@ -570,7 +571,7 @@ def test_a_graduation_both_ledgers_call_for_is_listed_with_no_human_command(svc)
     assert len(svc.beat("B").cosigned) == 1
     view = svc.view(f"author:{bob.author}")
     assert bob.author in view.counted and view.counted[bob.author].author_class == "established"
-    assert view.counted[bob.author].expires == (date.today() + timedelta(days=90)).isoformat()
+    assert view.counted[bob.author].expires == (utc_today() + timedelta(days=90)).isoformat()
     assert svc.beat("A").proposed == () and svc.beat("B").proposed == ()                # listed: nothing more to propose
 
 
@@ -591,7 +592,7 @@ def test_a_reporter_too_new_or_one_credit_short_is_not_proposed(svc):
     with svc.machines["A"]:
         for _ in range(reputation.GRADUATION_MIN_NOVEL - 1):
             reputation.ReputationLedger().record(short.author, reputation.Outcome(TODAY, True), novel=True,
-                                                 first_seen_day=(date.today() - timedelta(days=30)).isoformat())
+                                                 first_seen_day=(utc_today() - timedelta(days=30)).isoformat())
     assert svc.beat("A").proposed == ()
 
 
@@ -599,10 +600,10 @@ def test_a_listing_about_to_expire_is_renewed_and_one_far_from_expiry_is_not(tmp
     svc = Service(tmp_path, monkeypatch)                                 # alice's listing runs to 2026-12-31: not due
     assert svc.beat("A").proposed == ()
     carol = Reporter("0xc")
-    soon = (date.today() + timedelta(days=10)).isoformat()
+    soon = (utc_today() + timedelta(days=10)).isoformat()
     svc.team.two_key(Kind.COUNTED_AUTHORS, f"author:{carol.author}", _listing(carol, expires=soon))
     assert len(svc.beat("A").proposed) == 1 and len(svc.beat("B").cosigned) == 1
-    assert svc.view(f"author:{carol.author}").counted[carol.author].expires == (date.today() + timedelta(days=90)).isoformat()
+    assert svc.view(f"author:{carol.author}").counted[carol.author].expires == (utc_today() + timedelta(days=90)).isoformat()
     assert svc.beat("A").proposed == () and svc.beat("B").proposed == ()                # renewed: nothing more to propose
 
 

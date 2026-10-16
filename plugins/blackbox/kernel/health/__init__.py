@@ -199,8 +199,8 @@ def _community(inputs: HealthInputs) -> list[HealthItem]:
                                 f"{inputs.pending_shares} report(s) waiting for the network to accept this node's writes",
                                 "nothing to do — a newly subscribed node is refused for a few minutes; they are retried automatically"))
     if inputs.sharing_consent_problem:
-        items.append(HealthItem(_OPERATOR, HealthClass.ACTION, f"community sharing is on but stopped: {inputs.sharing_consent_problem}",
-                                "turn sharing back on with `blackbox report --enable-sharing` (or the dashboard toggle), or set `report: false`"))
+        items.append(HealthItem(_OPERATOR, HealthClass.ACTION, f"`report` is true in the settings but sharing is stopped: {inputs.sharing_consent_problem}",
+                                "turn sharing on with `blackbox report --enable-sharing` (or the dashboard toggle), which records your agreement, or set `report: false`"))
     if inputs.shares_given_up:
         items.append(HealthItem(_OPERATOR, HealthClass.ACTION,
                                 f"{inputs.shares_given_up} report(s) could not be shared within 24 h",

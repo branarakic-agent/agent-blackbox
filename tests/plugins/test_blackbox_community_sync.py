@@ -125,7 +125,14 @@ def test_status_lines_sharing_off(bb_home, capsys):
     cfg = BlackboxConfig(report=False, community_graph_id=DEV_GRAPH)
     report_command.print_community_status(cfg)
     out = capsys.readouterr().out
-    assert "threat sharing:    off (config key `report` is false)" in out
+    assert "threat sharing:    off — opt-in; `blackbox report --enable-sharing` turns it on" in out
+
+
+def test_status_lines_switch_on_without_an_opt_in_reads_off(bb_home, capsys, real_consent):
+    """`report: true` alone (a hand edit) is not sharing: status agrees with the share gate."""
+    report_command.print_community_status(BlackboxConfig(report=True, community_graph_id=DEV_GRAPH))
+    out = capsys.readouterr().out
+    assert "threat sharing:    off — community sharing is off — `blackbox report --enable-sharing`" in out
 
 
 def test_status_lines_unconfigured(bb_home, capsys):
@@ -146,6 +153,30 @@ def test_status_shows_last_share_from_ledger(bb_home, capsys):
     assert "reports shared:    1" in out
     assert "dep:npm:evil@1" in out
     assert "ok" in out
+
+
+def test_status_says_already_shared_for_a_refused_re_share_not_failed(bb_home, capsys):
+    """KI-415: the network refuses a second copy of a report this node already shared (one
+    report per reporter per threat) — the ledger records outcome "already-shared" with ok=False,
+    and status printed FAILED for it (seen on the trader bench, 2026-10-15)."""
+    audit.record_share_outcome(
+        identifier="injection:abc", category="injection", severity="high",
+        subject="urn:guardian:report:0xabc:feed", asset_name="report-y", ok=False,
+        outcome="already-shared", error="already shared earlier; a same-version re-share is refused by peers",
+    )
+    report_command.print_community_status(BlackboxConfig(report=True, community_graph_id=DEV_GRAPH))
+    out = capsys.readouterr().out
+    assert "· already shared ·" in out and "FAILED" not in out
+
+
+def test_status_still_says_failed_for_a_real_failure(bb_home, capsys):
+    audit.record_share_outcome(
+        identifier="injection:abc", category="injection", severity="high",
+        subject="urn:guardian:report:0xabc:feed", asset_name="report-y", ok=False,
+        outcome="failed", error="node unreachable",
+    )
+    report_command.print_community_status(BlackboxConfig(report=True, community_graph_id=DEV_GRAPH))
+    assert "· FAILED ·" in capsys.readouterr().out
 
 
 def test_ledger_identifiers_render_ansi_safe(bb_home, capsys):

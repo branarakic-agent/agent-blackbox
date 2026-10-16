@@ -104,11 +104,11 @@ def test_dashboard_settings_sharing_defaults_off_and_requires_explicit_true():
     assert "out.report = data.report !== false;" not in html  # permissive form banned
 
 
-def test_openclaw_runtime_reads_vm_only_and_reporting_is_on_by_default():
+def test_openclaw_runtime_reads_vm_only_and_reporting_is_opt_in():
     """The bridge READS only the verified graph (its enforcement tier never comes
-    from shared memory). Reporting is ON by default like the Python plugin
-    (2026-10-12), 0 is never "no cap", and it still needs a community graph id
-    and no opt-out record before anything leaves."""
+    from shared memory). Reporting is OFF by default like the Python plugin
+    (opt-in, 2026-10-16), 0 is never "no cap", and it still needs a community
+    graph id and an opt-in record before anything leaves."""
     ruleset_src = (OPENCLAW_DIR / "src" / "ruleset.ts").read_text(encoding="utf-8")
     config_src = (OPENCLAW_DIR / "src" / "config.ts").read_text(encoding="utf-8")
     client_src = (OPENCLAW_DIR / "src" / "dkgClient.ts").read_text(encoding="utf-8")
@@ -117,7 +117,7 @@ def test_openclaw_runtime_reads_vm_only_and_reporting_is_on_by_default():
     assert '["verifiable-memory", "public"]' in tiers
     assert "shared-working-memory" not in tiers
     assert 'view: DkgView = "verifiable-memory"' in client_src
-    assert "report: true," in config_src                       # on by default, like the Python plugin
+    assert "report: false," in config_src                      # opt-in, like the Python plugin
     assert "dailyReportLimit: 0" not in config_src             # 0 was "no cap" (Refine R1)
     assert "effectiveDailyReportLimit(" in config_src
     assert 'communityGraphId: "",' in config_src               # dormant until a graph is named

@@ -18,7 +18,9 @@ from __future__ import annotations
 
 import argparse
 
-from . import progress, state
+from pathlib import Path
+
+from . import node_service, progress, state
 from ..kernel import health
 from ..kernel.config import load_blackbox_config
 from ..kernel.dkg_client import DkgClient
@@ -37,4 +39,5 @@ def cmd_sync(args: argparse.Namespace) -> int:
         print("Blackbox setup has not run, so there is no DKG node and no threat graph to sync. "
               f"To {health.NODE_INSTALL_HINT}.")
         return 2 if getattr(args, "wait", False) else 0
+    node_service.trim_error_log(Path(cfg.dkg_home))   # every sync, the dashboard's included
     return _sync_with_node(args)

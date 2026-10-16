@@ -1,25 +1,29 @@
 /**
  * Sharing gate — TypeScript mirror of `plugins/blackbox/community/consent.py`.
  *
- * Community sharing is ON BY DEFAULT with an easy opt-out (2026-10-12; it was
- * opt-in). `${blackboxHome}/sharing_consent.json` matters only when it records
- * an opt-out (`withdrawn_at`); no record means the default, sharing allowed.
- * This module only READS the record (`blackbox report --withdraw-consent` and the
- * dashboard toggle write it). An unreadable or malformed record reads as no
- * record, exactly as in Python.
+ * Community sharing is OPT-IN (2026-10-16; it was on by default from
+ * 2026-10-12): `${blackboxHome}/sharing_consent.json` allows sharing only when
+ * it records an acceptance (`accepted_at`) and no opt-out (`withdrawn_at`); no
+ * record means the default, sharing off. This module only READS the record
+ * (`blackbox report --enable-sharing` and the dashboard toggle write it). An
+ * unreadable or malformed record reads as no record, exactly as in Python.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const RECORD_FILE = "sharing_consent.json";
 
-/** True unless the operator opted out (a record with `withdrawn_at`). */
+/** True only when the operator opted in (an `accepted_at` and no `withdrawn_at`). */
 export function sharingConsentInForce(blackboxHome: string): boolean {
-  let raw: Record<string, unknown>;
+  let raw: unknown;
   try {
-    raw = JSON.parse(readFileSync(join(blackboxHome, RECORD_FILE), "utf8")) as Record<string, unknown>;
+    raw = JSON.parse(readFileSync(join(blackboxHome, RECORD_FILE), "utf8"));
   } catch {
-    return true;   // no record (or unreadable): the default, sharing allowed
+    return false;   // no record (or unreadable): the default, sharing off
   }
-  return !(raw && typeof raw === "object" && raw.withdrawn_at);
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return false;
+  const record = raw as Record<string, unknown>;
+  // A field counts only as a non-empty string, exactly as consent.py's `_text` reads it.
+  const text = (value: unknown): string => (typeof value === "string" ? value : "");
+  return text(record.accepted_at) !== "" && text(record.withdrawn_at) === "";
 }

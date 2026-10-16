@@ -1,9 +1,10 @@
 """Community Curation C11 — the privacy documents, what changed, and erasure across the new stores.
 
-* Sharing is on by default (2026-10-12): a change of the reporter terms no
-  longer stops it; someone who accepted an earlier text is shown what changed
-  when they accept again; an opt-out is explained plainly in every place the
-  operator could look, and retractions still work.
+* Sharing is opt-in (2026-10-16): a change of the reporter terms never stops
+  sharing someone turned on; someone who accepted an earlier text is shown what
+  changed when they accept again; "off" (never turned on, or turned off) is
+  explained plainly in every place the operator could look, and retractions
+  still work.
 * The three documents name the community authority and what it decides.
 * Erasure on a curator node covers every store this build added that holds
   anything about a reporter; every file the new code writes is classified.
@@ -18,6 +19,7 @@ from datetime import date
 from pathlib import Path
 
 import pytest
+from _clock import utc_today
 from _community_rows import GRAPH, Reporter
 from test_blackbox_curate_community import Curators, _listing
 from test_blackbox_curator_service import FOUND, PKG, Service
@@ -63,15 +65,19 @@ def test_accepting_again_shows_what_changed_since_the_earlier_version(consented_
     assert report_rights.record_consent() == 0
     out = capsys.readouterr().out
     told, changed, full = (out.index("The terms changed since you accepted version 1.0"),
-                           out.index("## What changed in version 1.4"), out.index("Version: 1.4"))
-    assert told < changed < full and "ON by default" in out
+                           out.index("## What changed in version 1.5"), out.index("Version: 1.5"))
+    assert told < changed < full and "OPT-IN again" in out
     report_rights.record_consent()
     assert "The terms changed" not in capsys.readouterr().out                           # an up-to-date acceptance is not re-explained
 
 
 def test_an_opt_out_is_said_plainly_and_every_gate_agrees(real_consent, monkeypatch, tmp_path, capsys):
     monkeypatch.setenv("BLACKBOX_HOME", str(tmp_path / "bbhome"))
-    assert real_consent.why_not() == ""                                                  # the default: nothing to explain
+    never_on = real_consent.why_not()                                                    # the default: off, and said so
+    assert "community sharing is off" in never_on and "--enable-sharing" in never_on
+    assert sharing.CommunitySharePolicy(CFG).decide(FINDING, "0x" + "a" * 40) == (False, never_on)
+    real_consent.record()
+    assert real_consent.why_not() == ""                                                  # opted in: nothing to explain
     real_consent.withdraw()
     why = real_consent.why_not()
     assert "community sharing was turned off on" in why and "--enable-sharing" in why
@@ -87,11 +93,22 @@ def test_an_operator_who_opted_out_with_sharing_still_switched_on_sees_an_action
     rs = type("Rs", (), {"synced_at": 1.0, "counts": lambda self: {"injection": 5}, "community_paused": False, "kill_list": {}})()
     why = real_consent.why_not()
     items = health.operator_health(health.gather(CFG, rs, True, None, {}, 2.0, sharing_consent_problem=why))
-    stopped = [item for item in items if item.message.startswith("community sharing is on but stopped")]
+    stopped = [item for item in items if item.message.startswith("`report` is true in the settings but sharing is stopped")]
     assert len(stopped) == 1 and stopped[0].klass is health.HealthClass.ACTION and "--enable-sharing" in stopped[0].what_to_do
     off = BlackboxConfig(report=False, community_graph_id=GRAPH)                      # sharing off: nothing is stopped
     assert not any("stopped" in item.message for item in health.operator_health(health.gather(off, rs, True, None, {}, 2.0,
                                                                                               sharing_consent_problem=why)))
+
+
+def test_report_switched_on_by_hand_without_an_opt_in_is_an_action_item_not_sharing(real_consent, monkeypatch, tmp_path):
+    """`report: true` written by hand (or left by the 2026-10-12 default) is not an opt-in:
+    nothing is shared, and status/dashboard say how to opt in."""
+    monkeypatch.setenv("BLACKBOX_HOME", str(tmp_path / "bbhome"))
+    rs = type("Rs", (), {"synced_at": 1.0, "counts": lambda self: {"injection": 5}, "community_paused": False, "kill_list": {}})()
+    items = health.operator_health(health.gather(CFG, rs, True, None, {}, 2.0, sharing_consent_problem=real_consent.why_not()))
+    stopped = [item for item in items if item.message.startswith("`report` is true in the settings but sharing is stopped")]
+    assert len(stopped) == 1 and "community sharing is off" in stopped[0].message
+    assert not sharing.CommunitySharePolicy(CFG).decide(FINDING, "0x" + "a" * 40)[0]
 
 
 def test_status_and_the_dashboard_pass_the_consent_state_to_health():
@@ -104,7 +121,7 @@ def test_status_and_the_dashboard_pass_the_consent_state_to_health():
 
 def test_the_terms_name_both_curator_groups_and_what_a_listing_publishes():
     terms = consent_module.terms_text()
-    assert consent_module.terms_version(terms) == "1.4" and consent_module.changes_section(terms).startswith("## What changed in version 1.4")
+    assert consent_module.terms_version(terms) == "1.5" and consent_module.changes_section(terms).startswith("## What changed in version 1.5")
     for phrase in ("COMMUNITY curators", "never block", "at most 90 days", "index", "wallet address", "is not changed",
                    "signed statements", "always a person's decision"):
         assert phrase in terms, phrase
@@ -115,7 +132,7 @@ def test_the_controller_map_and_the_dpia_carry_the_community_authority_and_the_o
     controllers = (DOCS / "CONTROLLER_MAP.md").read_text(encoding="utf-8")
     dpia = (DOCS / "DPIA.md").read_text(encoding="utf-8")
     assert "Version: 1.2" in controllers and "Community curators' operator" in controllers and "decision 15" in controllers
-    assert "Version: 1.6" in dpia and "OPT-OUT" in dpia and "COUNSEL REVIEW REQUIRED" in dpia and "community_trust.json" in dpia and "Export bundle" in dpia and "art. 22" in dpia
+    assert "Version: 1.7" in dpia and "OPT-IN" in dpia and "COUNSEL REVIEW REQUIRED" in dpia and "community_trust.json" in dpia and "Export bundle" in dpia and "art. 22" in dpia
     checklist = dpia.split("## 8. Compliant-by-default checklist", 1)[1]
     rows = re.findall(r"^\| (?!Item|---)(.+?) \| (\w[\w ,]*?) \|", checklist, re.MULTILINE)
     assert len(rows) == 10 and {state for _, state in rows} <= {"done", "partly", "not applicable", "done, one name open", "departed"}
@@ -170,7 +187,7 @@ def test_a_curator_erasure_leaves_nothing_that_links_the_reporter_except_the_rec
     team.two_key(Kind.COUNTED_AUTHORS, f"author:{alice.author}", _listing(alice))
     with team.b:                                                                     # B published the listing: it keeps it alive
         from plugins.blackbox.community import reputation
-        reputation.ReputationLedger().record(alice.author, reputation.Outcome(date.today().isoformat(), True))
+        reputation.ReputationLedger().record(alice.author, reputation.Outcome(utc_today().isoformat(), True))
         parser = argparse.ArgumentParser()
         add_curate_parser(parser.add_subparsers(), compiled_ruleset=None)
         args = parser.parse_args(["curate", "graduate", "--erase", alice.author])

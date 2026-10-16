@@ -1,0 +1,119 @@
+[
+  {
+    "shield_id": "trader",
+    "mode": {
+      "enabled": true,
+      "wallets": [
+        "metamask",
+        "ghost"
+      ]
+    },
+    "blocking": true,
+    "sections": [
+      {
+        "title": "Found on this machine",
+        "help": "Wallets whose key store (the encrypted vault holding your keys) exists here: in a browser profile, a desktop wallet's folder (Exodus, Electrum) or the Solana command line's key file. Blackbox only checks that the folder exists — it never opens or reads it.",
+        "rows": [
+          {
+            "icon": "✓",
+            "state": "ok",
+            "text": "MetaMask · Chrome",
+            "sub": "vault — protected — blocked if the agent reaches for it",
+            "logo": "/shields/trader/packs/metamask/logo.svg"
+          },
+          {
+            "icon": "✓",
+            "state": "ok",
+            "text": "Firefox wallets · Firefox",
+            "sub": "every extension's storage in 1 Firefox profile — protected — blocked if the agent reaches for it",
+            "logo": ""
+          },
+          {
+            "icon": "–",
+            "state": "none",
+            "text": "Electrum · Desktop app",
+            "sub": "wallet folder — not selected in Settings, so not protected",
+            "logo": "/shields/trader/packs/electrum/logo.svg"
+          }
+        ]
+      },
+      {
+        "title": "Always watching",
+        "help": "",
+        "rows": [
+          {
+            "icon": "✓",
+            "state": "ok",
+            "text": "Seed phrases",
+            "sub": "checker on — 2,048-word list, checksum verified",
+            "logo": ""
+          },
+          {
+            "icon": "✓",
+            "state": "ok",
+            "text": "Private keys",
+            "sub": "labelled and Solana keys · blocked if sent · 1 own address listed for raw keys",
+            "logo": ""
+          },
+          {
+            "icon": "✓",
+            "state": "ok",
+            "text": "Exchange API keys",
+            "sub": "Binance · OKX · Bybit · Coinbase Exchange · KuCoin — only to their own site",
+            "logo": ""
+          },
+          {
+            "icon": "✓",
+            "state": "ok",
+            "text": "Token approvals",
+            "sub": "known drainer blocked · unlimited approvals flagged",
+            "logo": ""
+          },
+          {
+            "icon": "✓",
+            "state": "ok",
+            "text": "Protected files",
+            "sub": "~/.ssh/* · .env · .env.* · *.pem · *.key · *.p12 … · file tools and terminal",
+            "logo": ""
+          }
+        ]
+      },
+      {
+        "title": "Needs attention",
+        "help": "",
+        "rows": [
+          {
+            "icon": "!",
+            "state": "warn",
+            "text": "ghost: chosen but unavailable — no such pack",
+            "sub": "",
+            "logo": ""
+          },
+          {
+            "icon": "!",
+            "state": "warn",
+            "text": "new since you last saved: Solana CLI, Rabby, Coinbase Wallet, Trust Wallet, OKX Wallet, Keplr, Solflare",
+            "sub": "",
+            "logo": ""
+          }
+        ]
+      }
+    ],
+    "name": "Trader Shield",
+    "tagline": "Keeps your AI agent away from your crypto wallets, seed phrases and keys.",
+    "beta": true,
+    "page": "/shields/trader",
+    "claims": [
+      "secret:seed-phrase",
+      "secret:wallet-private-key",
+      "secret:solana-private-key",
+      "secret:bitcoin-private-key",
+      "secret:exchange-api-key",
+      "secret:token-approval-drainer",
+      "secret:token-approval-unlimited",
+      "secret:token-approval-unchecked-spender",
+      "*:crypto-wallet",
+      "*:macos-keychain"
+    ]
+  }
+]

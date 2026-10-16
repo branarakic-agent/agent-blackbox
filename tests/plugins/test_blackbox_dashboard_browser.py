@@ -5,7 +5,8 @@ community tier compiled from real signed rows (the adversarial suite's
 helpers) and a seeded audit, then runs `dashboard_browser_pass.mjs`
 (Playwright) at desktop and phone widths and asserts: zero page errors, zero
 console errors, zero failed requests, zero horizontal overflow, the Refine
-sections populated, and no phone card cell squeezed under an unbreakable token.
+sections populated, no phone card cell squeezed under an unbreakable token,
+and every shield's own page opened clean at both widths.
 
 Skips, with the reason, when node, Playwright or a Chromium build is not on
 this machine — a skipped smoke is visible; a missing one is not.
@@ -217,6 +218,9 @@ def test_the_dashboard_renders_clean_at_desktop_and_phone_widths(served, tmp_pat
         assert sections["stat-sharing-state"] in {"on", "off", "paused"}, (width, sections["stat-sharing-state"])
         assert sections["vs-lookups"], (width, sections["vs-lookups"])   # where verified answers come from
         assert view["spillingCells"] == [], (width, view["spillingCells"])
+        # Every shield's own page was opened too, so its errors and overflow are in the checks above
+        # (the Trader page once overflowed a phone on an unbreakable path and had no icon, 2026-10-14).
+        assert "/shields/trader" in sections["shield-pages"], (width, sections["shield-pages"])
         # The verified-sync meter is measured against the graph's real size (564 assets).
         assert sections["vs-pct"] == "22.0%", (width, sections["vs-pct"])
         assert sections["vs-chip"].lower() == "syncing", (width, sections["vs-chip"])
@@ -235,3 +239,40 @@ def test_the_served_app_never_touches_the_real_hermes_home(served):
     assert str(Path.home()) != str(_REAL_HOME)
     homes = hermes_homes.discover_hermes_homes()
     assert all(str(home).startswith(str(Path.home())) for home in homes), homes
+
+
+FRESHNESS = Path(__file__).with_name("dashboard_settings_freshness.mjs")
+
+
+def test_settings_reopened_after_engage_shows_it_and_save_keeps_it(served, tmp_path):
+    """2026-10-15 dashboard audit: Engage on the Trader banner, then a Settings Save, disengaged
+    the shield — the page reopened the Settings copy it loaded before Engage and saved it back."""
+    chromium = _chromium()
+    if chromium is None:
+        pytest.skip("no Chromium build in Playwright's cache (npx playwright install chromium)")
+    result = subprocess.run(["node", str(FRESHNESS), served, str(tmp_path)], capture_output=True, text=True, timeout=240,
+                            cwd=str(REPO), env={**os.environ, "PW_EXEC": chromium}, check=False)
+    assert result.returncode == 0, result.stderr[-2000:]
+    summary = json.loads((tmp_path / "settings-freshness-summary.json").read_text(encoding="utf-8"))
+    assert summary["pageErrors"] == [] and summary["consoleErrors"] == [], summary
+    assert summary["offBefore"] is False                 # the fixture starts with the shield off
+    assert summary["onInForm"] is True                   # reopened Settings shows the Engage
+    assert summary["enabledAfterSave"] is True           # and Save keeps it
+
+
+READ_ONLY = Path(__file__).with_name("dashboard_read_only_view.mjs")
+
+
+def test_a_read_only_view_says_changes_are_off_instead_of_network_error(served, tmp_path):
+    """2026-10-15: through the demo's read-only view (it refuses /api/session) Save said "Network
+    error. Settings not saved." and Engage could stay stuck on "Engaging…"."""
+    chromium = _chromium()
+    if chromium is None:
+        pytest.skip("no Chromium build in Playwright's cache (npx playwright install chromium)")
+    result = subprocess.run(["node", str(READ_ONLY), served, str(tmp_path)], capture_output=True, text=True, timeout=240,
+                            cwd=str(REPO), env={**os.environ, "PW_EXEC": chromium}, check=False)
+    assert result.returncode == 0, result.stderr[-2000:]
+    summary = json.loads((tmp_path / "read-only-view-summary.json").read_text(encoding="utf-8"))
+    assert summary["pageErrors"] == [], summary
+    assert "switched off in this view" in summary["saveStatus"] and "Network error" not in summary["saveStatus"]
+    assert summary["engageButton"].startswith("Engage ")   # back to its label, not stuck on "Engaging…"

@@ -122,7 +122,7 @@ def _validate(payload: dict[str, Any], *, sharing_consent: bool = False) -> tupl
             if not isinstance(payload[key], bool):
                 errors.append(f"{key} must be a boolean")
             elif key == "report" and payload[key] and not sharing_consent:
-                errors.append("report: could not record turning community sharing back on — check that the Blackbox home is writable")
+                errors.append("report: could not record turning community sharing on — check that the Blackbox home is writable")
             else:
                 updates[key] = payload[key]
 

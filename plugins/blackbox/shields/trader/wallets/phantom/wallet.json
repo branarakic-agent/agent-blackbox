@@ -18,5 +18,46 @@
     "file": "logo.svg",
     "terms": "NOTICE.md",
     "source": "Phantom_SVG_Icon.svg, docs.phantom.com/resources/assets (integration style guide)"
-  }
+  },
+  "availability": [
+    {
+      "store": "Chrome Web Store",
+      "browsers": [
+        "Chrome",
+        "Brave",
+        "Edge",
+        "Opera",
+        "Vivaldi",
+        "Arc"
+      ],
+      "state": "protected",
+      "url": "https://chromewebstore.google.com/detail/bfnaelmomeimhlpmgjnjophhpkkoljpa",
+      "source": "https://phantom.com/download"
+    },
+    {
+      "store": "Firefox Add-ons",
+      "browsers": [
+        "Firefox"
+      ],
+      "state": "protected",
+      "url": "https://addons.mozilla.org/firefox/addon/phantom-app/",
+      "source": "addons.mozilla.org listing by Phantom"
+    },
+    {
+      "store": "Edge Add-ons",
+      "browsers": [
+        "Edge"
+      ],
+      "state": "not-found",
+      "note": "No Edge Add-ons listing found; Edge installs it from the Chrome Web Store"
+    },
+    {
+      "store": "Safari",
+      "browsers": [
+        "Safari"
+      ],
+      "state": "not-offered",
+      "note": "No desktop Safari extension from the publisher"
+    }
+  ]
 }

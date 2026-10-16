@@ -844,6 +844,8 @@ plugins = ["**/plugin.yaml", "**/plugin.yml", "blackbox/kernel/public_suffix/*.d
            "blackbox/kernel/crypto_secrets/known_contracts.json",
            "blackbox/kernel/crypto_secrets/bip39_english.txt",
            "blackbox/dashboard/static/**/*", "blackbox/dashboard/assets/**/*",
+           "blackbox/dashboard/docs_routes/*.html", "blackbox/dashboard/docs_routes/*.css",
+           "blackbox/dashboard/docs_routes/*.js", "blackbox/dashboard/docs_routes/*.json",
            "blackbox/docs/REPORTER_TERMS.md",
            "blackbox/shields/**/*.json", "blackbox/shields/**/*.svg", "blackbox/shields/**/*.md",
            "blackbox/shields/**/*.html",

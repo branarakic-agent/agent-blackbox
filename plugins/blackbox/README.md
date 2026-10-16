@@ -15,7 +15,7 @@ and flags or blocks it before anything happens.
 | **Catches** | prompt injection, dangerous commands, sensitive-file access, secret exposure, malicious packages, unsafe skills, known-bad domains and wallets, attempts on crypto wallets and keys |
 | **Learns from** | Umanitek's verified threat graph on the OriginTrail Decentralized Knowledge Graph (DKG): its verified rules (may block) and the community reports in its shared memory (flag only) |
 | **Shows** | every finding in a local dashboard and audit trail |
-| **Shares** | privacy-safe, signed threat reports into the graph's shared memory — on by default, one command to turn off |
+| **Shares** | privacy-safe, signed threat reports into the graph's shared memory — opt-in: off until you turn it on |
 
 Contents: [How it works](#how-it-works) · [Install](#install) ·
 [What Blackbox does on your machine](#what-blackbox-does-on-your-machine) ·
@@ -56,8 +56,8 @@ hermes blackbox setup
 
 `hermes blackbox setup` runs the same installer as the one-line install below,
 inside the Hermes you already have: it installs Blackbox's DKG node (a pinned,
-checksum-verified release), joins the threat graph, protects every local agent,
-runs the first sync and starts the dashboard. Use `--store oxigraph` to set up
+checksum-verified release), joins the threat graph, protects the Hermes home it
+was set up in (and asks before protecting any other agent it finds), runs the first sync and starts the dashboard. Use `--store oxigraph` to set up
 without Docker. Until setup has run, the built-in rules (protected paths, secrets,
 Trader Shield) already protect, and `blackbox status` says setup is still needed.
 
@@ -80,7 +80,7 @@ The installer sets up everything Blackbox needs:
 | Hermes and this plugin | the agent runtime; `blackbox` becomes a shortcut for `hermes blackbox` |
 | A local DKG node | Blackbox's own node (npm package `@origintrail-official/dkg`) on 127.0.0.1, in its own home — it never touches another DKG installation, and reading needs no funds |
 | The verified threat graph | Umanitek's curated graph, synced to your node with its shared memory, so your node can read and share community reports |
-| Protection for every local agent | `blackbox attach` wires every Hermes home and OpenClaw workspace it finds |
+| Protection for the agents you choose | the Hermes home the installer set up; `blackbox attach <home>` or `--all` adds others |
 | The dashboard | at http://127.0.0.1:9700, reachable from this computer only |
 
 The node's default store is Blazegraph, which runs in Docker. On macOS the
@@ -105,16 +105,19 @@ Read this before installing. Blackbox sends **no telemetry or usage data**.
   - Blackbox's own DKG node keeps a copy of the public verified threat graph
     current by syncing with DKG network peers, the community reports in its
     shared memory included.
-  - **Community sharing is on by default.** Blackbox shares privacy-safe threat
-    reports into the graph's shared memory: the threat's name, category and
-    severity, and the day — never prompts, commands, file contents or secrets
-    (see [what a report carries](#what-a-report-carries)). It also reads other
-    nodes' reports, which only ever flag and never block. If Umanitek's
-    curators promote a threat from your report, the verified rule they
-    publish in the graph's Verified Memory names your report, reporter address
-    and key for good (see [promoted reports](#promoted-reports)).
-    Turn sharing off with `blackbox report --disable-sharing`, the dashboard
-    toggle, or `report: false` (`BLACKBOX_REPORT=0`).
+  - **Community sharing is opt-in: off until you turn it on.** Turned on with
+    `blackbox report --enable-sharing` or the dashboard toggle (either records
+    your agreement to the reporter terms; nothing else does), Blackbox shares
+    privacy-safe threat reports into the graph's shared memory: the threat's
+    name, category and severity, and the day — never prompts, commands, file
+    contents or secrets (see [what a report carries](#what-a-report-carries)).
+    It reads other nodes' reports either way; they only ever flag and never
+    block. If Umanitek's curators promote a threat from your report, the
+    verified rule they publish in the graph's Verified Memory names your
+    report, reporter address and key for good (see
+    [promoted reports](#promoted-reports)). Turn sharing off again with
+    `blackbox report --disable-sharing`, the dashboard toggle, or
+    `report: false` (`BLACKBOX_REPORT=0`).
   - Package installs are looked up on OSV.dev (`api.osv.dev`): the package name
     and version are sent, never your code. Turn this off with `osv_lookup: false`.
   - The optional AI reviewer is off until you set it up. Once on, it sends the
@@ -131,7 +134,12 @@ Read this before installing. Blackbox sends **no telemetry or usage data**.
   (which add-on lives in which folder) and the Solana CLI's `config.yml` (where
   its keypair is). It never reads wallet contents or keys. `blackbox attach`
   writes Blackbox's plugin entry into the Hermes homes and OpenClaw workspaces
-  you choose to protect.
+  you choose to protect: the ones you name (`blackbox attach ~/.hermes/profiles/work`)
+  or, after `--all` or a yes at the prompt, every one it finds. Each Hermes profile
+  is its own trust boundary, so Blackbox never adds itself to one on its own:
+  automatic attaching (`auto_attach: true`, `BLACKBOX_AUTO_ATTACH=1`) is off unless
+  you turn it on, and an agent you switch off with `blackbox detach` or the
+  dashboard stays off.
 - **Stored credentials.** These live in Blackbox's own folder (`$BLACKBOX_HOME`,
   default `~/.hermes/blackbox`): this node's DKG identity and API token, and the
   key that signs your community reports (`reporter_key.pem`, readable by you
@@ -170,13 +178,13 @@ plugins:
 
 | Category | How it is named | Example | In block mode |
 |---|---|---|---|
-| Malicious or vulnerable package | `dep:<ecosystem>:<name>@<version>` | `dep:npm:event-stream@3.3.6` | verified malware blocks; a vulnerability never blocks |
-| Prompt injection | `injection:<pattern hash>` | `injection:2146bcb99d8ef90a53e99b08` | verified rules block |
-| Dangerous command | `escalation:<tool name>:<argument shape>` | `escalation:terminal:remote-script-pipe` | verified rules block |
-| Sensitive file access | `fileaccess:<tool name>:<category>` | `fileaccess:read_file:ssh-private-key` | verified rules block |
-| Suspicious skill | `skill:<name>@<version>`, or `skill:artifact:<sha256>:<shape>` for a local one | `skill:sneaky-skill@1.0.0` | verified rules block |
-| Known-bad indicator | `ioc:<type>:<value>` — domain, url, ip, hash, wallet, contract | `ioc:domain:evil.example` | flags only in this version |
-| Secret exposure | `secret:<type>` — the type only, never the value | `secret:aws-access-key` | blocks at `block_severity`; a secret sent off the machine is rated critical |
+| Malicious or vulnerable package | `dep:{ecosystem}:{name}@{version}` | `dep:npm:event-stream@3.3.6` | verified malware blocks; a vulnerability never blocks |
+| Prompt injection | `injection:{pattern hash}` | `injection:2146bcb99d8ef90a53e99b08` | verified rules block |
+| Dangerous command | `escalation:{tool}:{argument shape}` | `escalation:terminal:remote-script-pipe` | verified rules block |
+| Sensitive file access | `fileaccess:{tool}:{category}` | `fileaccess:read_file:ssh-private-key` | verified rules block |
+| Suspicious skill | `skill:{name}@{version}`, or `skill:artifact:{sha256}:{shape}` for a local one | `skill:sneaky-skill@1.0.0` | verified rules block |
+| Known-bad indicator | `ioc:{type}:{value}` — domain, url, ip, hash, wallet, contract | `ioc:domain:evil.example` | flags only in this version |
+| Secret exposure | `secret:{type}` — the type only, never the value | `secret:aws-access-key` | blocks at `block_severity`; a secret sent off the machine is rated critical |
 | Your protected paths | a local rule | `~/.ssh/*`, `**/.env` | blocks |
 
 **When does Blackbox block?** Three things must all be true: `mode: block`, a
@@ -188,7 +196,8 @@ leave your machine.
 ## Trader Shield (crypto wallets and keys)
 
 Trader Shield keeps an AI agent away from your crypto wallets and keys. It is
-**off by default**; you switch it on.
+the first *shield*: an opt-in protection pack for one kind of user, on top of
+Blackbox's checks for everyone. It is **off by default**; you switch it on.
 
 What it stops, in block mode:
 
@@ -203,13 +212,17 @@ What it stops, in block mode:
 
 Supported wallets: **MetaMask, Phantom, Exodus, Electrum and the Solana CLI.**
 
+Trader Shield protects agents attached to Blackbox through Hermes. OpenClaw
+coverage is not there yet: an agent run through the OpenClaw bridge gets
+Blackbox's other checks, but not Trader Shield's.
+
 ![The Trader Shield page in the Blackbox dashboard](../../docs/catalog/trader-shield.png)
 
 To switch it on:
 
 1. Run `blackbox dashboard`, open Settings → Trader Shield and switch it on (or
    use the Engage button on the Trader Shield page,
-   http://127.0.0.1:9700/trader-shield). Set the mode to `block` so wallet
+   http://127.0.0.1:9700/shields/trader). Set the mode to `block` so wallet
    threats are stopped, not just flagged.
 2. Choose your wallets and, optionally, add your own public wallet addresses,
    so a raw private key that opens one of them is recognised too. Addresses
@@ -358,7 +371,7 @@ itself next to the rule is built but switched off until the DKG can carry it.
 | Erasing your identity does not reach it | the rule keeps naming the key and address the report was signed with |
 
 The reporter identity stays pseudonymous, as everywhere else in Blackbox. The
-reporter terms (version 1.4) say all of this before you share.
+reporter terms (version 1.5) say all of this before you share.
 
 ### Staying healthy
 
@@ -383,7 +396,7 @@ Every command is also `hermes blackbox …`.
 | `blackbox status` | config, node health, ruleset and findings counts, operator alarms |
 | `blackbox sync --wait` | pull the latest verified threat graph now |
 | `blackbox dashboard` | the live dashboard at http://127.0.0.1:9700 |
-| `blackbox attach` / `detach` | protect every local agent at once / remove protection |
+| `blackbox attach <home>` / `--all` / `detach` | protect the agents you name, or every one found / remove protection |
 | `blackbox chat` | a Blackbox-focused assistant chat |
 | `blackbox setup-llm` | the optional AI reviewer for prompt injection (flags only; `--disable` turns it off) |
 
@@ -391,7 +404,7 @@ Every command is also `hermes blackbox …`.
 
 | Command | What it does |
 |---|---|
-| `blackbox report --disable-sharing` / `--enable-sharing` | turn sharing off or back on |
+| `blackbox report --enable-sharing` / `--disable-sharing` | turn sharing on (opt in; records your agreement to the reporter terms) or off |
 | `blackbox report --consent` | read the reporter terms |
 | `blackbox report --type ioc --ioc-type domain --value evil.example --context fetched-by-tool` | file a report by hand (same checks and signer as automatic sharing) |
 | `blackbox report --status` | every report you shared: outcome, current stage and reason |
@@ -451,7 +464,7 @@ accept a `BLACKBOX_*` environment variable, such as `BLACKBOX_MODE`.
 |---|---|---|
 | `mode` | `audit` | `audit` records, `block` stops confirmed threats |
 | `block_severity` | `critical` | the lowest severity blocked in block mode |
-| `report` | `true` | share privacy-safe reports into the graph's shared memory |
+| `report` | `false` | share privacy-safe reports into the graph's shared memory (opt-in: turn on with `blackbox report --enable-sharing`) |
 | `report_min_severity` | `high` | the lowest severity a built-in check must reach to be flagged or shared |
 | `daily_report_limit` | `100` | outbound reports per day (cannot be switched off) |
 | `detection.<category>.enabled` | `true` | turn a category on or off: `injection`, `escalation`, `dependency`, `fileaccess`, `skill` |
@@ -516,6 +529,7 @@ block mode.
 | `overrides.json` | your local unblock decisions |
 | `kill_list.json` | the last good curator kill list for skills and MCP servers |
 | `allowlist.json` | your own additions to the allowlist (optional) |
+| `attach_declined.json` | the agents you switched protection off for, so no automatic re-attach turns it back on (present once you do) |
 
 ## Privacy and your rights
 
@@ -556,12 +570,13 @@ shrink).
 | `guard/` | the five hooks and the flag-or-block decision |
 | `detection/` | the checks: pure functions that name and match an action |
 | `ruleset/` | the compiled lookups the checks read, kept fresh |
-| `shields/` | opt-in protection packs; Trader Shield's wallets and browser folders as data |
+| `shields/` | opt-in protection packs; Trader Shield's wallets and browser folders as data ([how shields are built](shields/README.md)) |
 | `community/` | building, signing, sending, reading and verifying community statements |
 | `sync/` | the local DKG node and the verified-graph sync |
+| `setup/` | `blackbox setup`: the full install after a plugin-catalog install |
 | `audit/` | local logs and the share ledger |
 | `dashboard/` | the local web UI and its API |
-| `attach/` | finding and protecting every local agent |
+| `attach/` | finding local agents and protecting the ones you choose |
 | `overrides/` | the local release valve (`blackbox rules`) |
 | `killlist/` | the curators' signed kill list for skills and MCP servers |
 | `curate/` | curator-node tooling |

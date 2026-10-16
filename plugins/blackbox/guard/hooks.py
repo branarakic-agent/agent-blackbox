@@ -142,19 +142,11 @@ def _would_block(cfg: BlackboxConfig, findings: list[detection.Finding]) -> list
     ]
 
 
-def _own_key_findings(raw: list[detection.Finding], tool_name: str, args: Any) -> list[detection.Finding]:
-    """Raw keys of the operator's own listed addresses (Trader Shield), unless the
-    labelled-key rule already raised the same finding at least as high."""
-    found = detection.detect_own_wallet_keys(tool_name, args, lambda: shields.get("trader").mode().options["addresses"])  # transitional, S4c moves it
-    rank = constants.SEVERITY_RANK
-    have = max((rank.get(f.severity, -1) for f in raw if f.identifier == "secret:wallet-private-key"), default=-1)
-    return [f for f in found if rank.get(f.severity, -1) > have]
-
-
-def _raw_findings(cfg: BlackboxConfig, rs: Any, tool_name: str, args: Any) -> list[detection.Finding]:
+def _raw_findings(cfg: BlackboxConfig, rs: Any, tool_name: str, args: Any,
+                  active: shields.ShieldsSnapshot) -> list[detection.Finding]:
     """All raw findings for one call, gathered here so new detectors join without growing the hook body."""
     raw = detection.detect_all(tool_name, args, rs, discover=cfg.discover)
-    raw += detection.detect_custom_fileaccess(tool_name, args, cfg.protected_paths) + _own_key_findings(raw, tool_name, args)
+    raw += detection.detect_custom_fileaccess(tool_name, args, cfg.protected_paths) + shields.check(tool_name, args, active)
     raw += _kill_list_findings(rs, tool_name, args)   # R14: curator-signed DISABLE / WARN, last-good list
     return raw
 
@@ -174,10 +166,10 @@ def on_pre_tool_call(
     try:
         cfg = _config()
         rs = ruleset.get(cfg)
-        # Visibility: log every file-access tool call (best-effort).
-        _record_activity(tool_name, args)
-        raw = _raw_findings(cfg, rs, tool_name, args)
-        findings = reporting._flag_worthy(cfg, raw)
+        _record_activity(tool_name, args)   # visibility: log every file-access tool call (best-effort)
+        active = shields.snapshot()   # every shield's mode, read once for this call
+        raw = _raw_findings(cfg, rs, tool_name, args, active)
+        findings = reporting._flag_worthy(cfg, raw, active)
         detail = {"tool_name": tool_name, "session_id": session_id, "task_id": task_id,
                   "tool_call_id": tool_call_id, "args": audit.redact(args)}
         # Build the heavier conversation context only on a finding, so routine
@@ -364,7 +356,7 @@ def on_pre_api_request(**kwargs: Any) -> None:
         text = "\n".join(part for _, part in sources)   # the LLM reviewer's input
         findings = _injection_by_source(sources, rs, cfg.discover) + detection.detect_model_request_secrets(sources)   # KI-381
         findings += injection_sites.injection_site_findings(findings, kwargs.get("request_messages"), rs)   # D8
-        findings = reporting._flag_worthy(cfg, findings)
+        findings = reporting._flag_worthy(cfg, findings, shields.snapshot())
         detail = {
             "session_id": kwargs.get("session_id"),
             "task_id": kwargs.get("task_id"),

@@ -193,6 +193,87 @@ def test_the_route_serves_the_meter_and_reuses_a_reading_within_the_cache_window
     assert first["verified_rules"] == 106_760 and first["checked_at"] == "2026-10-08 06:53:37"
 
 
+# --- the graph size is read from one instant (KI-403) ---------------------------------
+
+def _meter_app(monkeypatch, tmp_path, downloads: list[int]):
+    """The real route with no cache, serving one live download count from
+    *downloads* per poll, against whatever daemon.log *tmp_path* holds."""
+    fastapi = pytest.importorskip("fastapi")
+    counts = iter(downloads)
+    monkeypatch.setattr(sync_meter, "CACHE_SECONDS", 0.0)
+    monkeypatch.setattr(ruleset, "verified_download_totals",
+                        lambda client, graph, timeout=None: ruleset.DownloadTotals(assets=next(counts), triples=1))
+    monkeypatch.setattr(ruleset, "verified_progress", lambda graph: {"assets_compiled": 0})
+    cfg = type("Cfg", (), {"context_graph_id": VM_GRAPH, "dkg_url": "http://127.0.0.1:1", "dkg_home": str(tmp_path)})()
+    app = fastapi.FastAPI()
+    sync_meter.register_sync_meter_routes(app, load_config=lambda: cfg, node_reachable=lambda c: True,
+                                          verified_rules=lambda c: 0)
+    return app
+
+
+def test_the_graph_size_holds_steady_while_downloads_outrun_the_last_pass(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+    # The pass said 312 left when the node held 253; the node then fetched 8 more before the next pass.
+    (tmp_path / "daemon.log").write_text(_reconcile_line("2026-10-14 20:21:00", VM_GRAPH, 312), encoding="utf-8")
+
+    with TestClient(_meter_app(monkeypatch, tmp_path, [253, 261])) as client:
+        first, later = (client.get("/api/verified-sync").json() for _ in range(2))
+
+    assert first["graph_assets"] == 565 and later["graph_assets"] == 565   # was 573 before KI-403
+    assert later["downloaded_assets"] == 261 and later["percent_downloaded"] == 46.2
+
+
+def test_a_new_pass_re_anchors_the_graph_size(monkeypatch, tmp_path):
+    from fastapi.testclient import TestClient
+    log = tmp_path / "daemon.log"
+    log.write_text(_reconcile_line("2026-10-14 20:21:00", VM_GRAPH, 312), encoding="utf-8")
+
+    with TestClient(_meter_app(monkeypatch, tmp_path, [253, 261, 270])) as client:
+        before = [client.get("/api/verified-sync").json()["graph_assets"] for _ in range(2)]
+        with log.open("a", encoding="utf-8") as handle:   # the next pass: 295 left, the node now holds 270
+            handle.write(_reconcile_line("2026-10-14 20:22:00", VM_GRAPH, 295))
+        after = client.get("/api/verified-sync").json()
+
+    assert before == [565, 565]
+    assert after["graph_assets"] == 565 and after["checked_at"] == "2026-10-14 20:22:00"
+
+
+def test_the_graph_size_never_reads_below_what_the_node_holds():
+    # Assets published and fetched between two passes: the node already holds more than the pass knew of.
+    meter = sync_meter.build_sync_meter(downloaded=ruleset.DownloadTotals(assets=568, triples=1), pending=0,
+                                        compiled_assets=565, verified_rules=0, downloaded_at_pass=565)
+
+    assert meter.graph_assets == 568 and meter.percent_downloaded == 100.0
+
+
+def test_the_anchor_keeps_the_count_seen_when_a_pass_first_appears():
+    anchor = sync_meter.GraphSizeAnchor()
+
+    assert anchor.downloaded_at_pass("g@20:21", 253) == 253
+    assert anchor.downloaded_at_pass("g@20:21", 261) == 253
+    assert anchor.downloaded_at_pass("g@20:22", 261) == 261
+
+
+def test_the_anchor_re_anchors_when_the_node_holds_fewer_assets_than_it_did():
+    anchor = sync_meter.GraphSizeAnchor()
+    anchor.downloaded_at_pass("g@20:21", 253)
+
+    assert anchor.downloaded_at_pass("g@20:21", 240) == 240   # rolled back: the old count overstates
+
+
+def test_an_unreadable_node_leaves_the_anchor_untouched(monkeypatch, tmp_path):
+    (tmp_path / "daemon.log").write_text(_reconcile_line("2026-10-14 20:21:00", VM_GRAPH, 312), encoding="utf-8")
+    monkeypatch.setattr(ruleset, "verified_download_totals", lambda client, graph, timeout=None: None)
+    monkeypatch.setattr(ruleset, "verified_progress", lambda graph: {})
+    cfg = type("Cfg", (), {"context_graph_id": VM_GRAPH, "dkg_url": "http://127.0.0.1:1", "dkg_home": str(tmp_path)})()
+    anchor = sync_meter.GraphSizeAnchor()
+
+    meter = sync_meter.read_sync_meter(cfg, node_reachable=True, verified_rules=0, anchor=anchor)
+
+    assert meter.state == "unavailable" and meter.graph_assets is None
+    assert anchor.downloaded_at_pass("probe", 1) == 1   # nothing was anchored by the failed read
+
+
 # --- the sync label never says "synced" over a graph still arriving (PR #21 audit) ---
 
 def _cfg(tmp_path):

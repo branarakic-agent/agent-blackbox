@@ -19,7 +19,8 @@ from ..kernel.dkg_client import DkgClient
 
 logger = logging.getLogger(__name__)
 
-def _flag_worthy(cfg: BlackboxConfig, findings: list[detection.Finding]) -> list[detection.Finding]:
+def _flag_worthy(cfg: BlackboxConfig, findings: list[detection.Finding],
+                 active: shields.ShieldsSnapshot) -> list[detection.Finding]:
     """Apply the user's detection policy to raw findings.
 
     * Per-category policy (``detection.<category>.{enabled,min_severity}``):
@@ -28,14 +29,13 @@ def _flag_worthy(cfg: BlackboxConfig, findings: list[detection.Finding]) -> list
       ``report_min_severity`` — they are nominations, not confirmed threats.
 
     Custom rules (``source == "custom"``) bypass the category policy.
-    Wallet findings (key stores, seed phrases, labelled private keys) count only
-    while Web3 wallet protection is on, for the wallets the operator chose.
+    A finding a shield claims (wallet key stores, seed phrases, private keys …)
+    counts only while that shield allows it under *active*, the hook's one
+    shields snapshot — this function reads no config of its own.
     """
     out: list[detection.Finding] = []
-    trader = shields.get("trader")   # transitional (S2b): S4c passes a shields snapshot instead
-    wallets = trader.mode() if findings and trader is not None else None
     for f in findings:
-        if wallets is not None and not trader.allows({"identifier": f.identifier, "fields": f.fields}, wallets):
+        if not shields.allows({"identifier": f.identifier, "fields": f.fields}, active):
             continue
         if f.source == "custom":
             out.append(f)
@@ -49,7 +49,7 @@ def _flag_worthy(cfg: BlackboxConfig, findings: list[detection.Finding]) -> list
 
 
 def _attach_sightings(finding_dicts: list[dict[str, Any]], detail: dict[str, Any]) -> None:
-    """Give each finding the sighting a report carries (threat-profiles §03.2):
+    """Give each finding the sighting a report carries:
     the tool, the action, blocked or flagged (from the hook's ``blocked`` list)
     and what the threat goes after."""
     blocked = set(detail.get("blocked") or ())

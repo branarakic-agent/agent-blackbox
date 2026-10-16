@@ -160,9 +160,13 @@ def _commit_all(repo: Path, message: str) -> None:
 def _resolve_repo(install_dir: Path, source: Path, branch: str) -> subprocess.CompletedProcess:
     text = INSTALL_SH.read_text(encoding="utf-8")
     functions = "\n".join(_shell_function(text, name)
-                          for name in ("blackbox_repo_is_valid", "move_broken_blackbox_repo_aside", "resolve_repo"))
+                          for name in ("blackbox_repo_is_valid", "move_broken_blackbox_repo_aside",
+                                       "blackbox_head_in_branch", "resolve_repo"))
+    depth = re.search(r"^BLACKBOX_HISTORY_CHECK_DEPTH=\S+", text, re.MULTILINE)
+    assert depth is not None
     script = f"""
 set -euo pipefail
+{depth.group(0)}
 step() {{ :; }}
 ok() {{ :; }}
 warn() {{ :; }}
@@ -271,6 +275,37 @@ def test_shell_installer_never_discards_a_local_commit_when_updating(tmp_path: P
 
     assert refused.returncode != 0
     assert (install_dir / "LOCAL").exists()
+    assert "not on that branch" in refused.stderr and "local work" in refused.stderr   # names the commit (KI-417)
+
+
+@pytest.mark.skipif(
+    shutil.which("git") is None or shutil.which("bash") is None,
+    reason="requires git and bash",
+)
+@_THROWAWAY_REPO_UPDATE
+def test_shell_installer_updates_a_checkout_moved_to_an_older_commit_of_the_branch(tmp_path: Path) -> None:
+    """KI-417 (trader bench, 2026-10-15): the checkout had been moved, outside the installer,
+    to a commit that IS on the branch but that the installer had not fetched last. The depth-1
+    clone has no history to show that, git reported "diverged", and the installer refused with
+    "it holds local commits" although it held none. It now fetches a bounded stretch of history,
+    sees HEAD is part of the branch, and moves forward."""
+    source = _source_repo(tmp_path)
+    install_dir = tmp_path / "agent-blackbox"
+    assert _resolve_repo(install_dir, source, "main").returncode == 0
+    (source / "RELEASE").write_text("v2\n")
+    _commit_all(source, "v2")
+    subprocess.run(["git", "branch", "side"], cwd=source, check=True)             # side = v2
+    (source / "RELEASE").write_text("v3\n")
+    _commit_all(source, "v3")
+    # the out-of-band move: fetch v2 by another branch name and check it out
+    subprocess.run(["git", "fetch", "-q", "--depth", "1", "origin", "side"], cwd=install_dir, check=True)
+    subprocess.run(["git", "reset", "-q", "--hard", "FETCH_HEAD"], cwd=install_dir, check=True)
+    assert (install_dir / "RELEASE").read_text() == "v2\n"
+
+    updated = _resolve_repo(install_dir, source, "main")
+
+    assert updated.returncode == 0, updated.stderr
+    assert (install_dir / "RELEASE").read_text() == "v3\n"
 
 
 def test_powershell_installer_fetches_a_branch_with_an_explicit_refspec() -> None:
@@ -287,3 +322,15 @@ def test_powershell_installer_updates_like_the_shell_installer() -> None:
 
     assert '$fetchedBefore = (& git -C $RepoDir rev-parse -q --verify "refs/remotes/origin/$RepoBranch"' in text
     assert '& git -C $RepoDir reset -q --keep "refs/remotes/origin/$RepoBranch"' in text
+
+
+def test_powershell_installer_also_checks_history_before_refusing_an_update() -> None:
+    """KI-417 mirror: the Windows installer moves a checkout that is already part of the branch
+    forward (bounded history fetch) and names the commits when it does refuse."""
+    text = INSTALL_PS1.read_text(encoding="utf-8")
+    check = re.search(r"^function Test-BlackboxHeadInBranch \{\r?\n(?P<body>.*?)^\}", text, re.MULTILINE | re.DOTALL)
+    assert check is not None
+    assert '"--deepen=$HistoryCheckDepth"' in check["body"] and "merge-base --is-ancestor HEAD $remote" in check["body"]
+    assert "$HistoryCheckDepth = 200" in text
+    assert "-or (Test-BlackboxHeadInBranch)" in text
+    assert "it holds commits that are not on that branch" in text

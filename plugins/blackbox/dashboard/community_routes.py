@@ -67,6 +67,19 @@ def _reports_of(community_read: CommunityReadSource) -> VerifiedReportsRead:
     return verified_reports
 
 
+def effective_sharing(result: dict[str, Any]) -> dict[str, Any]:
+    """*result* (a settings view, or a write result carrying one under ``settings``) with
+    ``report`` as sharing really stands: the switch AND a consent in force. A switch left on
+    after ``--withdraw-consent`` shows OFF, so the Settings toggle reads off and a later Save
+    sends off instead of opting the operator back in."""
+    from .. import community
+
+    view = result.get("settings") if isinstance(result.get("settings"), dict) else result
+    if "report" in view:
+        view["report"] = bool(view["report"]) and community.consent.in_force()
+    return result
+
+
 def community_stats_payload(verified_reports: VerifiedReportsRead) -> Any:
     """The launch instruments: contributing agents, corroboration, health."""
     from .. import community, ruleset
@@ -90,7 +103,7 @@ def community_stats_payload(verified_reports: VerifiedReportsRead) -> Any:
     ledger = sanitized_ledger(1)
     stats = {
         "configured": bool(getattr(cfg, "community_graph_id", "")),
-        "sharing_enabled": bool(getattr(cfg, "community_enabled", False)),
+        "sharing_enabled": community.consent.sharing_on(cfg),
         "paused": bool(getattr(rs, "community_paused", False)),
         "community_threats": len(community_rules),
         "corroborated_2plus": corroborated,
@@ -122,7 +135,7 @@ def reports_payload(verified_reports: VerifiedReportsRead, limit: int) -> Any:
     if not getattr(cfg, "community_graph_id", ""):
         return {
             "reports": [],
-            "sharing_enabled": bool(getattr(cfg, "community_enabled", False)),
+            "sharing_enabled": community.consent.sharing_on(cfg),
             "outbound": sanitized_ledger(limit),
         }
 
@@ -139,7 +152,7 @@ def reports_payload(verified_reports: VerifiedReportsRead, limit: int) -> Any:
     ]
     return {
         "reports": board,
-        "sharing_enabled": bool(getattr(cfg, "community_enabled", False)),
+        "sharing_enabled": community.consent.sharing_on(cfg),
         "outbound": outbound,
     }
 

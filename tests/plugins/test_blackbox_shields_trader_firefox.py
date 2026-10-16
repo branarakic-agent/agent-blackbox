@@ -1,17 +1,16 @@
 """Firefox wallets follow the wallet ticks like every other browser (shields/trader/detectors/
-firefox_map.py) — moved from test_blackbox_firefox_wallets.py in shields S4a.
+firefox_map.py) — moved from test_blackbox_firefox_wallets.py.
 
 Firefox names an add-on's storage folder by a random UUID; its prefs.js maps add-on id →
 UUID (the format below was copied from real Firefox 157 installs on a bench, 2026-10-13).
 MetaMask-in-Firefox is the ``metamask`` pack, Phantom-in-Firefox is ``phantom``, other add-ons
 are not wallets, and a folder the map cannot place is a pack-less finding that stays protected.
-Every input also goes through the old ``detection.detect_wallet_files``; the two must agree
-apart from the added ``pack`` field until S5b deletes the old module.
+The old ``detection.detect_wallet_files`` agreed with every input here apart from the added
+``pack`` field until the old module was deleted; the tests below hold the packs each input names.
 """
 
 from __future__ import annotations
 
-import dataclasses
 import json
 import os
 import sys
@@ -20,8 +19,6 @@ import time
 
 import pytest
 
-from plugins.blackbox.detection import firefox_extensions, wallet_files
-from plugins.blackbox.detection.wallet_files import detect_wallet_files
 from plugins.blackbox.shields.trader import detectors
 from plugins.blackbox.shields.trader import mode as trader_mode
 from plugins.blackbox.shields.trader.detectors import firefox_map
@@ -35,11 +32,8 @@ EVERY_PACK = trader_mode.build(enabled=True)
 
 
 def _detect(tool, args, active=EVERY_PACK):
-    """The new detector's findings, after checking the old one gives the same apart from ``pack``."""
-    new = detectors.detect(tool, args, active)
-    stripped = [dataclasses.replace(f, fields={k: v for k, v in f.fields.items() if k != "pack"}) for f in new]
-    assert stripped == detect_wallet_files(tool, args)
-    return new
+    """The detector's findings for *tool* and *args* under *active* (every pack by default)."""
+    return detectors.detect(tool, args, active)
 
 
 def _write_prefs(profile, mapping):
@@ -51,8 +45,7 @@ def _write_prefs(profile, mapping):
 
 
 def _reset_caches():
-    for cache in (firefox_extensions.PREFS_MAPS, firefox_map.PREFS_MAPS,
-                  wallet_files.EXISTING_STORES, detectors.EXISTING_STORES):
+    for cache in (firefox_map.PREFS_MAPS, detectors.EXISTING_STORES):
         cache.reset()
 
 
@@ -103,7 +96,8 @@ def test_a_folder_the_map_cannot_place_stays_protected(firefox, break_it):
 
 def test_unticking_a_wallet_turns_off_its_firefox_protection_too(firefox):
     command = {"command": f"tar czf backup.tgz {firefox}"}
-    _detect("terminal", command)
+    every_pack = _detect("terminal", command)
+    assert sorted(f.fields.get("pack", "(shield)") for f in every_pack) == ["(shield)", "metamask", "phantom"]
     only_phantom = detectors.detect("terminal", command, trader_mode.build(enabled=True, wallets=("phantom",)))
     assert sorted(f.fields.get("pack", "(shield)") for f in only_phantom) == ["(shield)", "phantom"]
 

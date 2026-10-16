@@ -19,5 +19,47 @@
     "file": "logo.svg",
     "terms": "NOTICE.md",
     "source": "@metamask/logo 4.0.0 (ISC)"
-  }
+  },
+  "availability": [
+    {
+      "store": "Chrome Web Store",
+      "browsers": [
+        "Chrome",
+        "Brave",
+        "Edge",
+        "Opera",
+        "Vivaldi",
+        "Arc"
+      ],
+      "state": "protected",
+      "url": "https://chromewebstore.google.com/detail/nkbihfbeogaeaoehlefnkodbefgpgknn",
+      "source": "https://metamask.io/download/"
+    },
+    {
+      "store": "Firefox Add-ons",
+      "browsers": [
+        "Firefox"
+      ],
+      "state": "protected",
+      "url": "https://addons.mozilla.org/firefox/addon/ether-metamask/",
+      "source": "https://metamask.io/download/"
+    },
+    {
+      "store": "Edge Add-ons",
+      "browsers": [
+        "Edge"
+      ],
+      "state": "protected",
+      "url": "https://microsoftedge.microsoft.com/addons/detail/ejbalbakoplchlghecdalmeeeajnimhm",
+      "source": "Edge Add-ons listing by Consensys"
+    },
+    {
+      "store": "Safari",
+      "browsers": [
+        "Safari"
+      ],
+      "state": "not-offered",
+      "note": "No desktop Safari extension from the publisher"
+    }
+  ]
 }

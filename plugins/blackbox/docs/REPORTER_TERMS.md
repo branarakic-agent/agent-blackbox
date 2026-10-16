@@ -1,8 +1,8 @@
 # Agent Blackbox — Reporter Terms (community reports)
 
-Version: 1.4 (draft for counsel review, 2026-10-16)
+Version: 1.5 (draft for counsel review, 2026-10-16)
 
-## What changed in version 1.4
+## What changed in version 1.5
 
 - ONE GRAPH. Your statements now go to the SHARED MEMORY of the verified
   threat graph (`0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox-vm`,
@@ -32,6 +32,16 @@ Version: 1.4 (draft for counsel review, 2026-10-16)
   not in use: there are none, and no reader acts on community-curator
   statements. Some may be added later. Umanitek's curators are the only ones
   who rule on reports (section 4).
+
+## What changed in version 1.4
+
+- Community sharing is OPT-IN again: it is off when Blackbox is installed and
+  stays off until you turn it on with `blackbox report --enable-sharing` or the
+  dashboard's sharing toggle. Turning it on records your agreement to these
+  terms; no installer, upgrade or automatic step ever turns it on for you.
+- An installation that was sharing only because of the version 1.2 default
+  (you never turned it on yourself) stops sharing when Blackbox is updated. If
+  you turned sharing on yourself, it stays on.
 
 ## What changed in version 1.3
 
@@ -67,10 +77,11 @@ Version: 1.4 (draft for counsel review, 2026-10-16)
   by it (section 5).
 
 These terms apply to the OPERATOR of a machine running Agent Blackbox.
-Community sharing is ON by default (`report: true`). You can turn it off at
+Community sharing is OFF until you turn it on (`report: false` by default).
+Turn it on with `blackbox report --enable-sharing` or the dashboard's sharing
+toggle; that records your agreement to these terms. You can turn it off at
 any time with `blackbox report --disable-sharing`, `blackbox report
---withdraw-consent` or the dashboard's sharing toggle; sharing stops on the
-next action, and turning it back on is just as easy.
+--withdraw-consent` or the toggle; sharing stops on the next action.
 
 ## 1. What you share
 
@@ -204,6 +215,8 @@ promoted from your report, with a revocation or a correction (section 4).
   curators deletes its ledger salt on request (crypto-shredding) and stops
   keeping your listing alive. Erasure cannot reach a promotion: it keeps
   naming the reporter key and address your report was signed with.
+- **Turn sharing on (opt in):** `blackbox report --enable-sharing` (or the
+  dashboard toggle).
 - **Turn sharing off (opt out):** `blackbox report --withdraw-consent` (or
   `--disable-sharing`, or the dashboard toggle).
 - Requests that need a human: the contact points in the controller map
@@ -213,5 +226,6 @@ promoted from your report, with a revocation or a correction (section 4).
 ## 6. Changes
 
 The version in force is the one shipped with your installation, and its
-"What changed" section lists every change. An opt-out stays in force across
-versions until you turn sharing back on.
+"What changed" section lists every change. Your choice stays in force across
+versions: a change of these terms never turns sharing on, and never pauses
+sharing you turned on.

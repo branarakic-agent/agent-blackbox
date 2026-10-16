@@ -1,11 +1,17 @@
 {
-  "about": "What each Trader Shield attack-table row DOES, keyed by the row's id in plugins/blackbox/dashboard/static/trader-shield-attacks.json. The page shows only the table; these commands are test data, so they live with the tests and never ship in the plugin (Hermes plugin catalog: the install scanner reads shipped attack strings as attacks). @NAME@ placeholders are filled with values made at test time.",
+  "about": "What each Trader Shield attack-table row DOES, keyed by the row's id in plugins/blackbox/shields/trader/attacks.json. The page shows only the table; these commands are test data, so they live with the tests and never ship in the plugin (Hermes plugin catalog: the install scanner reads shipped attack strings as attacks). @NAME@ placeholders are filled with values made at test time.",
   "scenarios": {
     "vault-file-tool": {"tool": "read_file", "args": {"path": "@VAULTFILE@"}},
     "vault-archive-profile": {"tool": "terminal", "args": {"command": "tar czf backups/chrome-backup.tgz ~/.config/google-chrome"}},
     "vault-copy": {"tool": "terminal", "args": {"command": "cp -r @VAULT@ backups/mm-copy"}},
     "vault-zip": {"tool": "terminal", "args": {"command": "zip -r backups/mm.zip @VAULT@"}},
     "phantom-vault-file-tool": {"tool": "read_file", "args": {"path": "@PHANTOMFILE@"}},
+    "coinbase-wallet-vault-file-tool": {"tool": "read_file", "args": {"path": "@COINBASEWALLETFILE@"}},
+    "rabby-vault-file-tool": {"tool": "read_file", "args": {"path": "@RABBYFILE@"}},
+    "trust-wallet-vault-file-tool": {"tool": "read_file", "args": {"path": "@TRUSTWALLETFILE@"}},
+    "okx-wallet-vault-file-tool": {"tool": "read_file", "args": {"path": "@OKXWALLETFILE@"}},
+    "keplr-vault-file-tool": {"tool": "read_file", "args": {"path": "@KEPLRFILE@"}},
+    "solflare-vault-file-tool": {"tool": "read_file", "args": {"path": "@SOLFLAREFILE@"}},
     "phantom-vault-copy": {"tool": "terminal", "args": {"command": "cp -r @PHANTOM@ backups/ph"}},
     "phantom-backup-copy": {"tool": "terminal", "args": {"command": "tar cz ~/.config/google-chrome/Default/IndexedDB/chrome-extension_bfnaelmomeimhlpmgjnjophhpkkoljpa_0.indexeddb.leveldb | base64"}},
     "vault-firefox": {"tool": "read_file", "args": {"path": "~/.mozilla/firefox/ab12.default/storage/default/moz-extension+++0b6f2c1e^userContextId=4294967295/idb/vault.sqlite"}},

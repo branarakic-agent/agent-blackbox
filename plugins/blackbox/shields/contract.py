@@ -267,13 +267,20 @@ class SettingOption:
 
 @dataclass(frozen=True)
 class SettingField:
-    """How Settings draws one field of a shield's group (*kind* ``toggle`` or ``multi-pick``)."""
+    """How Settings draws one field of a shield's group.
+
+    *kind* is ``toggle`` (a boolean), ``multi-pick`` (ids from *options*) or ``lines``
+    (a list of strings typed one per line); a ``lines`` field may carry *pattern*, a
+    regular expression each line must match in full — the page leaves out (never sends)
+    a line that does not, and the shield's validator is still the authority.
+    """
 
     key: str
     kind: str
     label: str
     help: str = ""
     options: tuple[SettingOption, ...] = ()
+    pattern: str = ""
 
     def as_json(self) -> dict[str, JsonValue]:
         return _record_json(self)

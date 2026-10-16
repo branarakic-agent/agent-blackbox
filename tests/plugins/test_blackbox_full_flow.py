@@ -26,9 +26,10 @@ from __future__ import annotations
 import dataclasses
 import json
 import time
-from datetime import date, timedelta
+from datetime import timedelta
 
 import pytest
+from _clock import utc_today
 from _community_rows import GRAPH, NETWORK, Reporter
 from _machines import Machine, share_report
 from test_blackbox_curate_community import CFG, _listing
@@ -152,7 +153,7 @@ def test_the_full_flow_from_report_to_hand_off_and_back_down(flow, tmp_path):
     assert flow.stage(LATER) == ("reported", "monitor")
 
     # --- the curators fall silent: three days on, the reader's operator is told; flags in force stay
-    three_days = (date.today() + timedelta(days=3)).isoformat()
+    three_days = (utc_today() + timedelta(days=3)).isoformat()
     with flow.team.reader:
         ours = community.read_verified_reports(flow.team.reader.node, CFG).curator.community
     silent = health.community_authority.gather(ours, three_days)

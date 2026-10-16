@@ -316,6 +316,48 @@
       ],
       "packs": [
         {
+          "availability": [
+            {
+              "browsers": [
+                "Chrome",
+                "Brave",
+                "Edge",
+                "Opera",
+                "Vivaldi",
+                "Arc"
+              ],
+              "source": "https://metamask.io/download/",
+              "state": "protected",
+              "store": "Chrome Web Store",
+              "url": "https://chromewebstore.google.com/detail/nkbihfbeogaeaoehlefnkodbefgpgknn"
+            },
+            {
+              "browsers": [
+                "Firefox"
+              ],
+              "source": "https://metamask.io/download/",
+              "state": "protected",
+              "store": "Firefox Add-ons",
+              "url": "https://addons.mozilla.org/firefox/addon/ether-metamask/"
+            },
+            {
+              "browsers": [
+                "Edge"
+              ],
+              "source": "Edge Add-ons listing by Consensys",
+              "state": "protected",
+              "store": "Edge Add-ons",
+              "url": "https://microsoftedge.microsoft.com/addons/detail/ejbalbakoplchlghecdalmeeeajnimhm"
+            },
+            {
+              "browsers": [
+                "Safari"
+              ],
+              "note": "No desktop Safari extension from the publisher",
+              "state": "not-offered",
+              "store": "Safari"
+            }
+          ],
           "id": "metamask",
           "kind": "browser-extension",
           "name": "MetaMask",
@@ -332,6 +374,47 @@
           }
         },
         {
+          "availability": [
+            {
+              "browsers": [
+                "Chrome",
+                "Brave",
+                "Edge",
+                "Opera",
+                "Vivaldi",
+                "Arc"
+              ],
+              "source": "https://phantom.com/download",
+              "state": "protected",
+              "store": "Chrome Web Store",
+              "url": "https://chromewebstore.google.com/detail/bfnaelmomeimhlpmgjnjophhpkkoljpa"
+            },
+            {
+              "browsers": [
+                "Firefox"
+              ],
+              "source": "addons.mozilla.org listing by Phantom",
+              "state": "protected",
+              "store": "Firefox Add-ons",
+              "url": "https://addons.mozilla.org/firefox/addon/phantom-app/"
+            },
+            {
+              "browsers": [
+                "Edge"
+              ],
+              "note": "No Edge Add-ons listing found; Edge installs it from the Chrome Web Store",
+              "state": "not-found",
+              "store": "Edge Add-ons"
+            },
+            {
+              "browsers": [
+                "Safari"
+              ],
+              "note": "No desktop Safari extension from the publisher",
+              "state": "not-offered",
+              "store": "Safari"
+            }
+          ],
           "id": "phantom",
           "kind": "browser-extension",
           "name": "Phantom",
@@ -393,46 +476,328 @@
           "status": "supported"
         },
         {
+          "availability": [
+            {
+              "browsers": [
+                "Chrome",
+                "Brave",
+                "Edge",
+                "Opera",
+                "Vivaldi",
+                "Arc"
+              ],
+              "source": "https://rabby.io",
+              "state": "protected",
+              "store": "Chrome Web Store",
+              "url": "https://chromewebstore.google.com/detail/acmacodkjbdgmoleebolmdjonilkdbch"
+            },
+            {
+              "browsers": [
+                "Firefox"
+              ],
+              "note": "No listing by Rabby on addons.mozilla.org (a lookalike exists; it is not protected)",
+              "state": "not-found",
+              "store": "Firefox Add-ons"
+            },
+            {
+              "browsers": [
+                "Edge"
+              ],
+              "note": "No Edge Add-ons listing found; Edge installs it from the Chrome Web Store",
+              "state": "not-found",
+              "store": "Edge Add-ons"
+            },
+            {
+              "browsers": [
+                "Safari"
+              ],
+              "note": "No desktop Safari extension from the publisher",
+              "state": "not-offered",
+              "store": "Safari"
+            }
+          ],
           "id": "rabby",
           "kind": "browser-extension",
           "name": "Rabby",
           "order": 110,
-          "status": "planned"
+          "status": "supported",
+          "stores": {
+            "chromium": [
+              "acmacodkjbdgmoleebolmdjonilkdbch"
+            ]
+          }
         },
         {
+          "availability": [
+            {
+              "browsers": [
+                "Chrome",
+                "Brave",
+                "Edge",
+                "Opera",
+                "Vivaldi",
+                "Arc"
+              ],
+              "source": "https://help.coinbase.com/en/wallet/browser-extension/coinbase-wallet-extension",
+              "state": "protected",
+              "store": "Chrome Web Store",
+              "url": "https://chromewebstore.google.com/detail/hnfanknocfeofbddgcijnmhnfnkdnaad"
+            },
+            {
+              "browsers": [
+                "Firefox"
+              ],
+              "note": "Coinbase supports Chrome and Brave only",
+              "source": "https://help.coinbase.com/en/wallet/browser-extension/coinbase-wallet-extension",
+              "state": "not-offered",
+              "store": "Firefox Add-ons"
+            },
+            {
+              "browsers": [
+                "Edge"
+              ],
+              "note": "Coinbase supports Chrome and Brave only",
+              "state": "not-offered",
+              "store": "Edge Add-ons"
+            },
+            {
+              "browsers": [
+                "Safari"
+              ],
+              "note": "No desktop Safari extension from the publisher",
+              "state": "not-offered",
+              "store": "Safari"
+            }
+          ],
           "id": "coinbase-wallet",
           "kind": "browser-extension",
           "name": "Coinbase Wallet",
           "order": 120,
-          "status": "planned"
+          "status": "supported",
+          "stores": {
+            "chromium": [
+              "hnfanknocfeofbddgcijnmhnfnkdnaad"
+            ]
+          }
         },
         {
+          "availability": [
+            {
+              "browsers": [
+                "Chrome",
+                "Brave",
+                "Edge",
+                "Opera",
+                "Vivaldi",
+                "Arc"
+              ],
+              "source": "https://trustwallet.com/download",
+              "state": "protected",
+              "store": "Chrome Web Store",
+              "url": "https://chromewebstore.google.com/detail/egjidjbpglichdcondbcbdnbeeppgdph"
+            },
+            {
+              "browsers": [
+                "Firefox"
+              ],
+              "note": "Trust Wallet's download page offers Chrome only",
+              "source": "https://trustwallet.com/download",
+              "state": "not-offered",
+              "store": "Firefox Add-ons"
+            },
+            {
+              "browsers": [
+                "Edge"
+              ],
+              "note": "No Edge Add-ons listing found; Edge installs it from the Chrome Web Store",
+              "state": "not-found",
+              "store": "Edge Add-ons"
+            },
+            {
+              "browsers": [
+                "Safari"
+              ],
+              "note": "No desktop Safari extension from the publisher",
+              "state": "not-offered",
+              "store": "Safari"
+            }
+          ],
           "id": "trust-wallet",
           "kind": "browser-extension",
           "name": "Trust Wallet",
           "order": 130,
-          "status": "planned"
+          "status": "supported",
+          "stores": {
+            "chromium": [
+              "egjidjbpglichdcondbcbdnbeeppgdph"
+            ]
+          }
         },
         {
+          "availability": [
+            {
+              "browsers": [
+                "Chrome",
+                "Brave",
+                "Edge",
+                "Opera",
+                "Vivaldi",
+                "Arc"
+              ],
+              "source": "https://web3.okx.com/download",
+              "state": "protected",
+              "store": "Chrome Web Store",
+              "url": "https://chromewebstore.google.com/detail/mcohilncbfahbmgdjkbpemcciiolgcge"
+            },
+            {
+              "browsers": [
+                "Firefox"
+              ],
+              "note": "OKX mentions Firefox, but no listing by OKX was found on addons.mozilla.org (2026-10-16)",
+              "state": "not-found",
+              "store": "Firefox Add-ons"
+            },
+            {
+              "browsers": [
+                "Edge"
+              ],
+              "note": "No Edge Add-ons listing found; Edge installs it from the Chrome Web Store",
+              "state": "not-found",
+              "store": "Edge Add-ons"
+            },
+            {
+              "browsers": [
+                "Safari"
+              ],
+              "note": "No desktop Safari extension from the publisher",
+              "state": "not-offered",
+              "store": "Safari"
+            }
+          ],
           "id": "okx-wallet",
           "kind": "browser-extension",
           "name": "OKX Wallet",
           "order": 140,
-          "status": "planned"
+          "status": "supported",
+          "stores": {
+            "chromium": [
+              "mcohilncbfahbmgdjkbpemcciiolgcge"
+            ]
+          }
         },
         {
+          "availability": [
+            {
+              "browsers": [
+                "Chrome",
+                "Brave",
+                "Edge",
+                "Opera",
+                "Vivaldi",
+                "Arc"
+              ],
+              "source": "https://www.keplr.app/get",
+              "state": "protected",
+              "store": "Chrome Web Store",
+              "url": "https://chromewebstore.google.com/detail/dmkamcknogkgcdfhhbddcghachkejeap"
+            },
+            {
+              "browsers": [
+                "Firefox"
+              ],
+              "source": "https://www.keplr.app/get",
+              "state": "protected",
+              "store": "Firefox Add-ons",
+              "url": "https://addons.mozilla.org/firefox/addon/keplr/"
+            },
+            {
+              "browsers": [
+                "Edge"
+              ],
+              "note": "Keplr's own Edge build has its own id",
+              "source": "https://www.keplr.app/get",
+              "state": "not-covered",
+              "store": "Edge Add-ons",
+              "url": "https://microsoftedge.microsoft.com/addons/detail/ocodgmmffbkkeecmadcijjhkmeohinei"
+            },
+            {
+              "browsers": [
+                "Safari"
+              ],
+              "note": "No desktop Safari extension from the publisher",
+              "state": "not-offered",
+              "store": "Safari"
+            }
+          ],
           "id": "keplr",
           "kind": "browser-extension",
           "name": "Keplr",
           "order": 150,
-          "status": "planned"
+          "status": "supported",
+          "stores": {
+            "chromium": [
+              "dmkamcknogkgcdfhhbddcghachkejeap"
+            ],
+            "firefox": [
+              "keplr-extension@keplr.app"
+            ]
+          }
         },
         {
+          "availability": [
+            {
+              "browsers": [
+                "Chrome",
+                "Brave",
+                "Edge",
+                "Opera",
+                "Vivaldi",
+                "Arc"
+              ],
+              "source": "https://www.solflare.com/download/",
+              "state": "protected",
+              "store": "Chrome Web Store",
+              "url": "https://chromewebstore.google.com/detail/bhhhlbepdkbapadjdnnojkbgioiodbic"
+            },
+            {
+              "browsers": [
+                "Firefox"
+              ],
+              "source": "https://www.solflare.com/download/",
+              "state": "protected",
+              "store": "Firefox Add-ons",
+              "url": "https://addons.mozilla.org/firefox/addon/solflare-wallet/"
+            },
+            {
+              "browsers": [
+                "Edge"
+              ],
+              "note": "No Edge Add-ons listing found; Edge installs it from the Chrome Web Store",
+              "state": "not-found",
+              "store": "Edge Add-ons"
+            },
+            {
+              "browsers": [
+                "Safari"
+              ],
+              "note": "No desktop Safari extension from the publisher",
+              "state": "not-offered",
+              "store": "Safari"
+            }
+          ],
           "id": "solflare",
           "kind": "browser-extension",
           "name": "Solflare",
           "order": 160,
-          "status": "planned"
+          "status": "supported",
+          "stores": {
+            "chromium": [
+              "bhhhlbepdkbapadjdnnojkbgioiodbic"
+            ],
+            "firefox": [
+              "{6d72262a-b243-4dc6-8f4f-be96c74e0a86}"
+            ]
+          }
         }
       ]
     }

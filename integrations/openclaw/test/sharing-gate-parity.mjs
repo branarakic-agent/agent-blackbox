@@ -5,7 +5,7 @@
  * file), writes each into a fresh Blackbox home, asks `sharingConsentInForce`,
  * and prints the answers as a JSON array.
  * `tests/plugins/test_blackbox_sharing_gate_parity.py` compares them with
- * `community/consent.in_force` (sharing on by default; off only after an opt-out).
+ * `community/consent.in_force` (sharing opt-in: on only with an acceptance and no opt-out).
  *
  * Run with: npx tsx integrations/openclaw/test/sharing-gate-parity.mjs <cases.json>
  */

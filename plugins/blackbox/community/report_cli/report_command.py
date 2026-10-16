@@ -13,7 +13,7 @@ import logging
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from ... import audit
 from ... import detection
-from .. import graph_stats, report_builder, report_schema, report_signer, sharing, share_retry
+from .. import consent, graph_stats, report_builder, report_schema, report_signer, sharing, share_retry
 from . import report_rights, report_tracking, statement_verbs, submission_gate
 from .. import reader as graph_reader
 from ...kernel import constants, threat_ids
@@ -35,19 +35,20 @@ def print_community_status(cfg) -> None:
         print("  community graph:   not configured (community sharing dormant)")
         return
     print(f"  community graph:   {display_safety.term_safe(cfg.community_graph_id)}")
-    if cfg.community_enabled:
-        sharing = f"on (min severity {cfg.report_min_severity}, cap {cfg.daily_report_limit}/day)"
+    # One answer for "is sharing on?" (consent.sharing_on): the switch AND an opt-in record.
+    if consent.sharing_on(cfg):
+        state = f"on (min severity {cfg.report_min_severity}, cap {cfg.daily_report_limit}/day)"
     elif not cfg.report:
-        sharing = "off (config key `report` is false)"
+        state = "off — opt-in; `blackbox report --enable-sharing` turns it on"
     else:
-        sharing = "off"
-    print(f"  threat sharing:    {sharing}")
+        state = f"off — {consent.why_not() or 'the community graph is not configured'}"
+    print(f"  threat sharing:    {state}")
     ledger = audit.read_share_ledger(limit=1000)
     contributed = sum(1 for row in ledger if row.get("ok"))
     line = f"  reports shared:    {contributed}"
     if ledger:
         last = ledger[0]
-        outcome = "ok" if last.get("ok") else "FAILED"
+        outcome = report_tracking.outcome_label(last)   # a refused re-share reads "already shared", not FAILED
         line += f" (last: {display_safety.term_safe(last.get('identifier'), 80)} · {outcome} · {display_safety.term_safe(last.get('ts'), 24)})"
     print(line)
 
@@ -230,9 +231,9 @@ _REPORT_FLAGS: tuple[tuple[tuple[str, ...], dict[str, Any]], ...] = (
     (("--danger-shape",), dict(dest="danger_shape", choices=_choices(detection.SKILL_DANGER_SHAPES),
                                help="skill (local): danger shape")),
     (("--severity",), dict(default="high", choices=list(constants.SEVERITY_ORDER))),
-    (("--consent",), dict(action="store_true", help="read the reporter terms and record consent to share (R13; opt-in)")),
+    (("--consent",), dict(action="store_true", help="read the reporter terms and record your agreement to share (R13; sharing is opt-in)")),
     (("--withdraw-consent",), dict(dest="withdraw_consent", action="store_true", help="withdraw consent: sharing stops")),
-    (("--enable-sharing",), dict(dest="enable_sharing", action="store_true", help="turn community sharing on (needs consent)")),
+    (("--enable-sharing",), dict(dest="enable_sharing", action="store_true", help="turn community sharing on (opt-in: records your agreement to the reporter terms)")),
     (("--disable-sharing",), dict(dest="disable_sharing", action="store_true", help="turn community sharing off")),
 )
 

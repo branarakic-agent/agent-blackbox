@@ -13,8 +13,7 @@ tell (no ``prefs.js``, unreadable, malformed, or the folder is not in the map) â
 caller then protects the folder rather than risk leaving a wallet open. Only the
 settings file is read; nothing inside any extension's storage is ever opened.
 
-Moved here from ``detection/firefox_extensions.py`` (shields S4a); that copy stays
-wired to the old guard path until S4c and is deleted in S5b.
+Moved here from ``detection/firefox_extensions.py`` (since deleted).
 
 Usage::
 

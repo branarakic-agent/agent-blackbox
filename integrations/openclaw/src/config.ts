@@ -41,7 +41,7 @@ export interface BlackboxConfig {
   dkgUrl: string;
   dkgHome: string;
   syncInterval: number; // seconds
-  /** Share privacy-safe reports to the community graph. ON by default (2026-10-12); an opt-out record stops it at send time. */
+  /** Share privacy-safe reports to the community graph. Opt-in (2026-10-16): off by default, and a consent record (R13) is still required at send time. */
   report: boolean;
   /** Daily cap on outbound reports; never "no cap" — 0 or less means the default (Refine R1). */
   dailyReportLimit: number;
@@ -130,7 +130,7 @@ const DEFAULTS: BlackboxConfig = {
   dkgUrl: DEFAULT_DKG_URL,
   dkgHome: "",
   syncInterval: 300,
-  report: true,
+  report: false,
   dailyReportLimit: DEFAULT_DAILY_REPORT_LIMIT,
   communityGraphId: "",
   communityGraphPeerId: "",

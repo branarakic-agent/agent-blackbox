@@ -119,10 +119,13 @@ def test_an_undated_manifest_never_beats_a_dated_one_and_a_conflict_freezes(keys
     assert trust_manifests.manifests_conflict([pending, twin])
 
 
-# ------------------------------------------------------------------ finding 4: withdrawal stops every beat
+# ------------------------------------------------------------------ finding 4: no opt-in (never given, or withdrawn) stops every beat
 
 
-def test_withdrawn_consent_stops_keep_alive_retries_and_digests(real_consent, tmp_path, monkeypatch):
+@pytest.mark.parametrize("state", ["never-opted-in", "withdrawn"])
+def test_no_consent_in_force_stops_keep_alive_retries_and_digests(real_consent, tmp_path, monkeypatch, state):
+    """Sharing is opt-in (2026-10-16): with no acceptance on record — the default — or after a
+    withdrawal, nothing leaves on any beat, even with `report: true`; the opt-in starts them."""
     cfg = BlackboxConfig(report=True, community_graph_id=GRAPH)
     store = keep_alive.LiveReportStore(tmp_path / "live.json", clock=lambda: 1_800_000_000.0)
     store.remember(graph=GRAPH, name="report-a", identifier=THREAT, subject="s", severity="high", quads=[{"a": "b"}], epoch=keep_alive.Epoch(1))
@@ -139,7 +142,9 @@ def test_withdrawn_consent_stops_keep_alive_retries_and_digests(real_consent, tm
             sent.append(a[1])
             return {"state": "succeeded"}
 
-    real_consent.withdraw()                                                     # the operator opted out
+    if state == "withdrawn":
+        real_consent.record()
+        real_consent.withdraw()                                                 # the operator opted out
     assert not real_consent.in_force()
     assert keep_alive.publish_due_copies(Node(), cfg, store, now=1_800_000_000.0 + 11 * 86_400) == 0
     assert share_retry.retry_due_shares(Node(), cfg, queue) == 0 and sent == []

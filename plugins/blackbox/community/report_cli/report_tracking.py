@@ -28,11 +28,18 @@ _OUTCOME_LABELS = {"accepted": "ok", "already-shared": "already shared", "failed
                    "kept-alive": "kept alive"}                                                # R5
 
 
+def outcome_label(row: dict[str, Any]) -> str:
+    """How one share-ledger row's outcome is shown — "ok", "already shared", "FAILED", … —
+    the one mapping every view uses (`blackbox status` and `blackbox report --status`). A row
+    from before outcomes were recorded falls back to its ``ok`` flag."""
+    return _OUTCOME_LABELS.get(str(row.get("outcome") or ("accepted" if row.get("ok") else "failed")), "FAILED")
+
+
 def outcome_line(row: dict[str, Any], compiled: dict[str, dict[str, Any]]) -> str:
     """R10 TRACK: one ledger row as "what happened to my report": the share
     outcome, then the threat's current local stage and reason from the
     compiled community store (what every node sees)."""
-    outcome = _OUTCOME_LABELS.get(str(row.get("outcome") or ("accepted" if row.get("ok") else "failed")), "FAILED")
+    outcome = outcome_label(row)
     identifier = str(row.get("identifier") or "")
     rule = compiled.get(identifier) or {}
     stage = f"{rule.get('stage')} ({rule.get('enforcement')}) — {rule.get('stageReason')}" if rule.get("stage")         else "not in the compiled community tier (not read yet, retracted, or below the compile cap)"

@@ -117,7 +117,7 @@ class BlackboxConfig:
     dkg_home: str = field(default_factory=lambda: str(constants.blackbox_dkg_home()))
     dkg_bin: str = field(default_factory=lambda: str(constants.blackbox_dkg_bin()))
     sync_interval: int = 3600
-    report: bool = True   # community sharing ON by default, opt-out (2026-10-12)
+    report: bool = False   # community sharing is opt-in (2026-10-16); a consent record is also needed
     daily_report_limit: int = constants.DEFAULT_DAILY_REPORT_LIMIT
     report_min_severity: str = "high"
     #: Community context graph address (env BLACKBOX_COMMUNITY_GRAPH_ID →
@@ -142,7 +142,7 @@ class BlackboxConfig:
     dashboard_port: int = 9700
     discover: bool = True
     osv_lookup: bool = True
-    auto_attach: bool = True
+    auto_attach: bool = False   # opt-in: each Hermes profile is its own trust boundary (attach.automatic_targets)
     #: Optional LLM reviewer (opt-in, off by default): an LLM gives a second opinion on prompt
     #: injection over the observer path. Provider ``openai`` or ``anthropic``. Config keys:
     #: ``plugins.entries.blackbox.llm.{enabled,provider,model,api_key_env|api_key}`` — ``api_key_env``
@@ -358,9 +358,9 @@ def load_blackbox_config() -> BlackboxConfig:
         dkg_home=dkg_home,
         dkg_bin=dkg_bin,
         sync_interval=max(3600, _as_int(_env_or(entry, env="BLACKBOX_SYNC_INTERVAL", key="sync_interval", default=3600), 3600)),
-        # Community sharing switches (README: `report` / `report_min_severity`): `report` defaults ON
-        # (opt-out, 2026-10-12); the daily cap is a real bound from the first report (KI-002).
-        report=_as_bool(_env_or(entry, env="BLACKBOX_REPORT", key="report", default=True), True),
+        # Community sharing switches (README: `report` / `report_min_severity`): `report` defaults OFF
+        # (opt-in, 2026-10-16); the daily cap is a real bound from the first report (KI-002).
+        report=_as_bool(_env_or(entry, env="BLACKBOX_REPORT", key="report", default=False), False),
         daily_report_limit=constants.effective_daily_report_limit(_as_int(_env_or(entry, env="BLACKBOX_DAILY_REPORT_LIMIT", key="daily_report_limit", default=constants.DEFAULT_DAILY_REPORT_LIMIT), constants.DEFAULT_DAILY_REPORT_LIMIT)),
         community_shadow=_as_bool(_env_or(entry, env="BLACKBOX_COMMUNITY_SHADOW", key="community_shadow", default=False), False),
         verified_lookup_fallback=_fallback_mode(_env_or(entry, env="BLACKBOX_VERIFIED_LOOKUP_FALLBACK", key="verified_lookup_fallback", default="off")),
@@ -375,7 +375,7 @@ def load_blackbox_config() -> BlackboxConfig:
         dashboard_port=_as_int(_env_or(entry, env="BLACKBOX_DASHBOARD_PORT", key="dashboard_port", default=9700), 9700),
         discover=_as_bool(_env_or(entry, env="BLACKBOX_DISCOVER", key="discover", default=True), True),
         osv_lookup=_as_bool(_env_or(entry, env="BLACKBOX_OSV_LOOKUP", key="osv_lookup", default=True), True),
-        auto_attach=_as_bool(_env_or(entry, env="BLACKBOX_AUTO_ATTACH", key="auto_attach", default=True), True),
+        auto_attach=_as_bool(_env_or(entry, env="BLACKBOX_AUTO_ATTACH", key="auto_attach", default=False), False),
         categories=categories,
         protected_paths=protected_paths,
         llm_enabled=llm_enabled,

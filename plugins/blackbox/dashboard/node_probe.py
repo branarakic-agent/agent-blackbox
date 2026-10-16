@@ -12,6 +12,8 @@
   graph the node never followed).
 * :class:`RepeatGate` — keeps a condition that persists from writing one log
   line per poll.
+* :class:`NodeReadCache` — the stale-while-revalidate cache every node-backed
+  read is served through, so a slow or dead node never makes a poll wait.
 
 Log lines go to the standard ``logging`` tree; under Hermes that is the
 size-capped, secret-redacting ``~/.hermes/logs/agent.log`` (WARNING also in
@@ -199,3 +201,66 @@ def node_sync_probe(cfg: Any, *, reachable: bool) -> Optional[dict[str, Any]]:
     except Exception:
         subscribed = None
     return {"node_reachable": True, "catchup": catchup, "subscribed": subscribed}
+
+
+class NodeReadCache:
+    """Stale-while-revalidate cache for the dashboard's node-backed reads (one lock, one instance per app).
+
+    ``get(key, producer, default, ttl=None)`` answers the cached value for *key* at once and, once it
+    is older than *ttl* (``default_ttl`` when None), refreshes it on a background thread — *default*
+    until the first refresh lands. *producer* runs off the request path, so it may block on the node;
+    a failure keeps the last value and is logged at most once per interval per key (*log_gate*), and a
+    refresh slower than *slow_seconds* is logged too.
+
+    ``store(key, producer)`` recomputes *key* now, on the caller's thread — for a read whose input the
+    request itself just changed (a Settings save changes a shield's card), so the page's next read is
+    the new value. A background refresh that began before such a store never overwrites it.
+
+        reads = NodeReadCache(default_ttl=20.0, slow_seconds=10.0, log_gate=RepeatGate())
+        cards = reads.get("shields", build_cards, [], 2.0)
+        reads.store("shields", build_cards)
+    """
+
+    def __init__(self, *, default_ttl: float, slow_seconds: float, log_gate: RepeatGate) -> None:
+        self._default_ttl = default_ttl
+        self._slow_seconds = slow_seconds
+        self._log_gate = log_gate
+        self._lock = threading.Lock()
+        self._state: dict[str, dict[str, Any]] = {}   # key -> {"val", "ts"}
+        self._busy: set[str] = set()
+
+    def get(self, key: str, producer: Callable[[], Any], default: Any, ttl: Optional[float] = None) -> Any:
+        now = time.monotonic()
+        with self._lock:
+            entry = self._state.get(key)
+            fresh = entry is not None and (now - entry["ts"]) < (self._default_ttl if ttl is None else ttl)
+            current = entry["val"] if entry is not None else default
+            spawn = (not fresh) and (key not in self._busy)
+            if spawn:
+                self._busy.add(key)
+        if spawn:
+            threading.Thread(target=self._refresh, args=(key, producer), name="blackbox-swr", daemon=True).start()
+        return current
+
+    def store(self, key: str, producer: Callable[[], Any]) -> None:
+        value = producer()
+        with self._lock:
+            self._state[key] = {"val": value, "ts": time.monotonic()}
+
+    def _refresh(self, key: str, producer: Callable[[], Any]) -> None:
+        started = time.monotonic()
+        try:
+            value = producer()
+        except Exception as exc:  # fail open; logged (with its traceback) at most once per interval per key
+            if self._log_gate.due(key):
+                logger.warning("blackbox dashboard: node read %s failed: %s", key, exc, exc_info=True)
+            value = None
+        elapsed = time.monotonic() - started
+        if elapsed > self._slow_seconds and self._log_gate.due("slow:" + key):
+            logger.warning("blackbox dashboard: node read %s took %.1f s", key, elapsed)
+        with self._lock:
+            newer = self._state.get(key)
+            # A value stored after this refresh began (a save's store) is newer: keep it.
+            if value is not None and not (newer is not None and newer["ts"] > started):
+                self._state[key] = {"val": value, "ts": time.monotonic()}
+            self._busy.discard(key)

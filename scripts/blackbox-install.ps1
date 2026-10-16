@@ -36,6 +36,7 @@ $ProgressPreference = "SilentlyContinue"
 # ── Configuration (override via env) ────────────────────────────────────────
 $RepoUrl     = if ($env:BLACKBOX_REPO_URL)    { $env:BLACKBOX_REPO_URL }    else { "https://github.com/umanitek/agent-blackbox.git" }
 $RepoBranch  = if ($env:BLACKBOX_REPO_BRANCH) { $env:BLACKBOX_REPO_BRANCH } else { "main" }
+$DkgTaskName = "Agent Blackbox DKG node"   # the node's logon task (Register-ScheduledTask below)
 # Setup-only mode: Blackbox is already installed as a plugin (the Hermes plugin catalog), and
 # `hermes blackbox setup` runs this script for everything after Hermes, in the Hermes it runs in.
 # The caller passes HERMES_BIN, VENV_DIR, BLACKBOX_INSTALL_DIR, BLACKBOX_HELPER_DIR and
@@ -273,6 +274,62 @@ function Initialize-BlackboxDkgProcessEnvironment {
     }
     Write-Ok "DKG safety limits: one large sync at a time; V8 heap ${heapMb}MB"
     return $true
+}
+
+# The logon task an earlier install registered to run the node: it holds `dkg start --foreground`
+# and retries a failed run, so it supervises the node. Stopping or starting that node with
+# `dkg stop`/`dkg start` behind the task's back makes the two fight (KI-414; the systemd and
+# launchd services in blackbox-install.sh behave the same way). Returns the task, or $null on a
+# first install, before the task is registered.
+function Get-BlackboxDkgTask {
+    if (-not (Get-Command Get-ScheduledTask -ErrorAction SilentlyContinue)) { return $null }
+    $task = Get-ScheduledTask -TaskName $DkgTaskName -ErrorAction SilentlyContinue
+    if ($task -and $task.State -ne "Disabled") { return $task }
+    return $null
+}
+
+# Start, stop or restart the node: through its logon task when there is one, else with the DKG
+# CLI. Stopping the task first is a requested stop (no retry); the CLI stop that follows ends a
+# node left behind by the task's process. Sets $LASTEXITCODE like the CLI, so every caller
+# checks one result either way.
+function Invoke-BlackboxDkgControl {
+    param([ValidateSet("start", "stop", "restart")][string]$Action)
+    if ($null -eq (Get-BlackboxDkgTask)) {
+        if ($Action -eq "restart") {
+            Invoke-BlackboxDkg stop
+            if ($LASTEXITCODE -eq 0) { Invoke-BlackboxDkg start }
+        } else {
+            Invoke-BlackboxDkg $Action
+        }
+        return
+    }
+    try {
+        if ($Action -ne "start") {
+            Stop-ScheduledTask -TaskName $DkgTaskName -ErrorAction Stop
+            Invoke-BlackboxDkg stop
+        }
+        if ($Action -ne "stop") { Start-ScheduledTask -TaskName $DkgTaskName -ErrorAction Stop }
+        $global:LASTEXITCODE = 0
+    } catch {
+        Write-Warn2 "Could not $Action the DKG node through its task: $($_.Exception.Message)"
+        $global:LASTEXITCODE = 1
+    }
+}
+
+# Whether the checkout's HEAD is already part of origin/$RepoBranch's history - then moving to
+# the new tip loses nothing. A depth-1 clone holds none of that history, so a bounded stretch
+# more is fetched to check (never the whole repository); an answer it cannot give is "no",
+# which keeps the strict fast-forward and its refusal (KI-417; mirrors blackbox-install.sh).
+$HistoryCheckDepth = 200
+function Test-BlackboxHeadInBranch {
+    $remote = "refs/remotes/origin/$RepoBranch"
+    & git -C $RepoDir merge-base --is-ancestor HEAD $remote 2>$null
+    if ($LASTEXITCODE -eq 0) { return $true }
+    if ((& git -C $RepoDir rev-parse --is-shallow-repository 2>$null) -ne "true") { return $false }
+    & git -C $RepoDir fetch -q "--deepen=$HistoryCheckDepth" origin $RepoBranch 2>$null
+    if ($LASTEXITCODE -ne 0) { return $false }
+    & git -C $RepoDir merge-base --is-ancestor HEAD $remote 2>$null
+    return ($LASTEXITCODE -eq 0)
 }
 
 function Invoke-BlackboxDkg {
@@ -663,7 +720,7 @@ function Initialize-BlackboxStore {
         if (Test-BlackboxBlazegraph) { return $true }
         if ($script:DkgAlreadyRunning) {
             Write-Step "Pausing DKG so its overloaded store can pass recovery checks ..."
-            Invoke-BlackboxDkg stop
+            Invoke-BlackboxDkgControl stop
             if ($LASTEXITCODE -eq 0) {
                 $script:DkgAlreadyRunning = $false
                 if (Test-BlackboxBlazegraph) { return $true }
@@ -969,13 +1026,19 @@ function Resolve-Repo {
         # A depth-1 fetch brings the new tip without its parent, so `pull --ff-only`
         # refuses every update (KI-294): move to the new tip when the install holds
         # no work of its own (--keep still refuses uncommitted changes).
+        # HEAD can also be an older commit of the branch this install did not fetch last (the
+        # checkout was moved outside the installer): still no work of its own, but a depth-1
+        # clone cannot show it (KI-417) - Test-BlackboxHeadInBranch fetches a bounded stretch.
         $head = (& git -C $RepoDir rev-parse HEAD)
-        if ($fetchedBefore -and $head -eq $fetchedBefore) {
+        if (($fetchedBefore -and $head -eq $fetchedBefore) -or (Test-BlackboxHeadInBranch)) {
             & git -C $RepoDir reset -q --keep "refs/remotes/origin/$RepoBranch"
             if ($LASTEXITCODE -ne 0) { throw "Could not update $RepoDir to origin/${RepoBranch}: it has uncommitted changes (git's reason is above)" }
         } else {
             & git -C $RepoDir pull --ff-only origin $RepoBranch
-            if ($LASTEXITCODE -ne 0) { throw "Could not fast-forward $RepoDir to origin/${RepoBranch}: it holds local commits (git's reason is above)" }
+            if ($LASTEXITCODE -ne 0) {
+                $own = (& git -C $RepoDir log --oneline -3 "refs/remotes/origin/$RepoBranch..HEAD" 2>$null) -join "; "
+                throw "Could not fast-forward $RepoDir to origin/${RepoBranch}: it holds commits that are not on that branch: $own"
+            }
         }
     } else {
         Write-Step "Cloning $RepoUrl -> $RepoDir"
@@ -1242,9 +1305,8 @@ function Install-Dkg {
         }
         Write-Step "Restarting the Blackbox-owned DKG node to activate sync and relay updates ..."
         try {
-            Invoke-BlackboxDkg stop
-            if ($LASTEXITCODE -ne 0) { throw "dkg stop exit $LASTEXITCODE" }
-            Invoke-BlackboxDkg start
+            Invoke-BlackboxDkgControl restart
+            if ($LASTEXITCODE -ne 0) { throw "dkg restart exit $LASTEXITCODE" }
             if (-not (Wait-BlackboxDkgRuntime)) { throw "DKG runtime verification failed" }
             Remove-Item $script:DkgStoreResetMarker -Force -ErrorAction SilentlyContinue
             Write-Ok "Blackbox DKG node restarted with the current sync settings"
@@ -1272,7 +1334,7 @@ function Install-Dkg {
     Write-Step "  Store:    $(Get-BlackboxStoreDescription)"
     Write-Step "  (non-interactive; subscribing and reading need no wallet funding)"
     try {
-        Invoke-BlackboxDkg start
+        Invoke-BlackboxDkgControl start
         if (-not (Wait-BlackboxDkgRuntime)) { throw "DKG runtime verification failed" }
         Remove-Item $script:DkgStoreResetMarker -Force -ErrorAction SilentlyContinue
         Write-Ok "DKG node bootstrapped on $Network"
@@ -1418,11 +1480,12 @@ defaults = {
     "context_graph_id": context_graph_id,
     "graph_peer_id": graph_peer_id,
     "sync_interval": 3600,
-    # Community sharing is ON by default with an easy opt-out (2026-10-12):
-    # privacy-safe threat statements only, never prompts, commands, paths or
-    # files. The daily cap is the plugin's default bound (100 since 2026-10-12; 20 before): 0 used to mean
+    # Community sharing is OPT-IN (2026-10-16): off until the operator runs
+    # `blackbox report --enable-sharing` or uses the dashboard toggle, which also
+    # record the acceptance. The installer never records it. The daily cap is the
+    # plugin's default bound (100 since 2026-10-12; 20 before): 0 used to mean
     # NO cap, and the plugin no longer accepts it (Refine R1).
-    "report": True,
+    "report": False,
     "daily_report_limit": 100,
     "report_min_severity": "high",
     "block_severity": "critical",
@@ -1459,16 +1522,13 @@ def _consent_in_force(checkout):
 if blackbox.get("report") is True and not _consent_in_force(repo_dir):
     blackbox["report"] = False
     added.append("report")
-# Sharing became ON by default on 2026-10-12 (same rule as blackbox-install.sh):
-# turned on ONCE for installs whose older installer wrote report: False, never
-# for an operator who opted out, never again after the marker is written.
-SHARING_DEFAULT_MARK = "on-2026-10-12"
-if blackbox.get("sharing_default") != SHARING_DEFAULT_MARK:
-    if blackbox.get("report") is not True and _consent_in_force(repo_dir):
-        blackbox["report"] = True
-        added.append("report")
-    blackbox["sharing_default"] = SHARING_DEFAULT_MARK
-    added.append("sharing_default")
+# Sharing is opt-in again (2026-10-16). The 2026-10-12 installers turned sharing
+# on by default and wrote a `sharing_default` marker; the KI-184 rule above has
+# already turned off every such install that never recorded an acceptance, and
+# the marker now means nothing, so it is removed. An operator who opted in keeps
+# sharing. The installer never turns sharing on.
+if blackbox.pop("sharing_default", None) is not None:
+    added.append("sharing_default (removed)")
 # 0 was the pre-R1 "no cap" (refused); 20 was the earlier installers' default, raised to 100 on 2026-10-12.
 if blackbox.get("daily_report_limit") in (0, "0", 20, "20"):
     blackbox["daily_report_limit"] = 100
@@ -1591,20 +1651,32 @@ function Configure-BlackboxMode {
     }
 }
 
-# ── Auto-protect every local agent (best-effort, non-fatal) ─────────────────
-# Discovers every local Hermes home + OpenClaw workspace and enables Blackbox
-# in each, so protection is on everywhere without per-instance setup.
+# ── Protect agents (best-effort, non-fatal) ─────────────────────────────────
+# Blackbox protects the Hermes home this installer set up ($HermesHome). Every
+# other Hermes profile or OpenClaw workspace is its own trust and credential
+# boundary, so it is attached only when the operator says so: `blackbox attach`
+# lists the ones not yet protected and asks [y/N] on the console; with no console
+# it attaches none of them. Scripted installs set BLACKBOX_ATTACH_ALL=1.
 function Protect-AllAgents {
-    Write-Heading "Protecting all local agents"
-    Write-Step "Discovering local Hermes homes + OpenClaw workspaces (blackbox attach) ..."
+    Write-Heading "Protecting your agents"
+    Write-Step "Protecting the Hermes home at $HermesHome (blackbox attach) ..."
     try {
-        & $HermesBin blackbox attach
+        & $HermesBin blackbox attach $HermesHome
         if ($LASTEXITCODE -ne 0) { throw "hermes exit $LASTEXITCODE" }
-        Write-Ok "Blackbox attached to all discovered local agents"
+        Write-Ok "Blackbox protects $HermesHome"
     } catch {
-        Write-Warn2 "Could not auto-attach to every local agent (this is non-fatal)."
-        Write-Step "Re-run anytime with:  blackbox attach"
+        Write-Warn2 "Could not protect $HermesHome (this is non-fatal)."
+        Write-Step "Re-run anytime with:  blackbox attach $HermesHome"
     }
+    if (@('1', 'true', 'yes') -contains "$env:BLACKBOX_ATTACH_ALL".ToLower()) {
+        Write-Step "BLACKBOX_ATTACH_ALL is set: protecting every Hermes home + OpenClaw workspace found ..."
+        & $HermesBin blackbox attach --all
+        if ($LASTEXITCODE -ne 0) { Write-Warn2 "Could not protect every agent (this is non-fatal)." }
+        return
+    }
+    Write-Step "Looking for other agents on this machine (Hermes profiles, OpenClaw workspaces) ..."
+    & $HermesBin blackbox attach
+    if ($LASTEXITCODE -ne 0) { Write-Step "Protect others later with:  blackbox attach <home>   (or --all)" }
 }
 
 # ── Guided next steps (single source of truth) ──────────────────────────────
@@ -1634,12 +1706,13 @@ function Show-NextSteps {
   Store:            $storeDescription
   Docs & community: $docsUrl
 
-  Community sharing is ON: when your agent meets a threat already listed in the
-  verified threat graph, this node shares a privacy-safe statement (the threat's
-  identifier and type, the tool that met it, blocked or flagged, and what the
-  threat targets; never prompts, commands, file paths or files) with the
-  Blackbox community graph. Turn it off any time:
-       blackbox report --disable-sharing     (or the dashboard's sharing toggle)
+  Community sharing is OFF unless you turn it on (it is opt-in). When on, and
+  your agent meets a threat already listed in the verified threat graph, this
+  node shares a privacy-safe statement (the threat's identifier and type, the
+  tool that met it, blocked or flagged, and what the threat targets; never
+  prompts, commands, file paths or files) with the Blackbox community graph.
+  Turn it on (this records your agreement to the reporter terms):
+       blackbox report --enable-sharing      (or the dashboard's sharing toggle)
 "@ | Write-Host
         Write-Host ""
         return
@@ -1665,12 +1738,13 @@ function Show-NextSteps {
 
   Docs & community:  $docsUrl
 
-  Community sharing is ON: when your agent meets a threat already listed in the
-  verified threat graph, this node shares a privacy-safe statement (the threat's
-  identifier and type, the tool that met it, blocked or flagged, and what the
-  threat targets; never prompts, commands, file paths or files) with the
-  Blackbox community graph. Turn it off any time:
-       blackbox report --disable-sharing     (or the dashboard's sharing toggle)
+  Community sharing is OFF unless you turn it on (it is opt-in). When on, and
+  your agent meets a threat already listed in the verified threat graph, this
+  node shares a privacy-safe statement (the threat's identifier and type, the
+  tool that met it, blocked or flagged, and what the threat targets; never
+  prompts, commands, file paths or files) with the Blackbox community graph.
+  Turn it on (this records your agreement to the reporter terms):
+       blackbox report --enable-sharing      (or the dashboard's sharing toggle)
 "@ | Write-Host
     Write-Host ""
 }
@@ -1735,7 +1809,7 @@ function Register-BlackboxStartupTasks {
     try {
         $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
         $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "$hidden `"$nodeLauncher`""
-        Register-ScheduledTask -TaskName "Agent Blackbox DKG node" -Action $action -Trigger $trigger `
+        Register-ScheduledTask -TaskName $DkgTaskName -Action $action -Trigger $trigger `
             -Principal $principal -Settings $settings -Force | Out-Null
         Write-Ok "The DKG node starts when you sign in (task 'Agent Blackbox DKG node')"
     } catch {

@@ -41,7 +41,8 @@ def test_tasks_are_per_user_at_sign_in_with_no_admin_rights():
     body = _function("Register-BlackboxStartupTasks")
     assert "-AtLogOn -User $env:USERNAME" in body
     assert "-LogonType Interactive -RunLevel Limited" in body
-    assert '-TaskName "Agent Blackbox DKG node"' in body and '-TaskName "Agent Blackbox dashboard"' in body
+    assert '-TaskName $DkgTaskName' in body and '-TaskName "Agent Blackbox dashboard"' in body
+    assert '$DkgTaskName = "Agent Blackbox DKG node"' in INSTALL_PS1.read_text(encoding="utf-8")
     assert '$trigger.Delay = "PT30S"' in body                      # the dashboard after the node
     assert "blackbox dashboard" in body
 

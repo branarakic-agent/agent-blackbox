@@ -32,7 +32,6 @@ from .paths.keychain import detect_keychain_access
 from .paths.protected import detect_custom_fileaccess
 from .secrets_handled.exposure import (detect_exchange_key_misdirection, detect_model_request_secrets, detect_own_wallet_keys,
                                        detect_secret_exposure)
-from .wallet_files import detect_wallet_files
 from ..kernel import threat_ids
 
 logger = logging.getLogger(__name__)
@@ -294,12 +293,11 @@ def detect_all(tool_name: str, args: Any, ruleset: Any, discover: bool = True) -
     findings.extend(detect_fileaccess(tool_name, args, ruleset))
     findings.extend(detect_skill(tool_name, args, ruleset))
     findings.extend(detect_ioc(tool_name, args, ruleset, ioc_context(tool_name, args)))
-    # Secret exposure and wallet key stores always run (not gated by discovery): personal, never shared.
+    # Secret exposure always runs (not gated by discovery): personal, never shared.
     findings.extend(detect_secret_exposure(tool_name, args))
     findings.extend(detect_exchange_key_misdirection(tool_name, args))
     findings.extend(detect_token_approvals(tool_name, args, ruleset))
     findings.extend(detect_keychain_access(tool_name, args))
-    findings.extend(detect_wallet_files(tool_name, args))
     if not discover:
         findings = [f for f in findings if f.source != "heuristic"]
     return findings

@@ -1,54 +1,50 @@
 """Trader Shield's browser-extension kind (shields/trader/detectors) — moved from
-test_blackbox_wallet_files.py in shields S4a.
+test_blackbox_wallet_files.py.
 
 Each test drives one way an agent reaches a browser wallet's vault (or a way that must
-NOT count) through the NEW detector, ``detectors.detect``. Until S5b deletes the old
-module, every input also goes through ``detection.detect_wallet_files`` and the two
-must give identical findings apart from the added ``pack`` field (:func:`_detect`);
-the attack table's vault and Firefox rows are run through both the same way.
+NOT count) through the detector, ``detectors.detect``. The old
+``detection.detect_wallet_files`` gave identical findings apart from the added ``pack``
+field until the old module was deleted; the roots, store globs and the attack table's vault and
+Firefox rows stay pinned to what both gave on that last run.
 """
 
 from __future__ import annotations
 
-import dataclasses
 import os
+import re
 
 import pytest
 
 from _trader_attack_table import ATTACKS
-from plugins.blackbox.detection import wallet_files
-from plugins.blackbox.detection.wallet_files import detect_wallet_files
 from plugins.blackbox.shields.contract import Pack
 from plugins.blackbox.shields.trader import detectors
 from plugins.blackbox.shields.trader import mode as trader_mode
 from plugins.blackbox.shields.trader.detectors import browser_extension
 from plugins.blackbox.shields.trader.detectors.browser_extension import BrowserExtensionMatcher, Owner
+from test_blackbox_shields_trader_packs import RECORDED_BROWSER_ROOTS
 
 CHROME_ID = "nkbihfbeogaeaoehlefnkodbefgpgknn"
 EDGE_ID = "ejbalbakoplchlghecdalmeeeajnimhm"
 PHANTOM_ID = "bfnaelmomeimhlpmgjnjophhpkkoljpa"
+
+#: Chrome Web Store ids of the wallets promoted to supported on 2026-10-16 (proven on real installs).
+NEW_EXTENSION_IDS = {"rabby": "acmacodkjbdgmoleebolmdjonilkdbch", "coinbase-wallet": "hnfanknocfeofbddgcijnmhnfnkdnaad",
+                     "trust-wallet": "egjidjbpglichdcondbcbdnbeeppgdph", "okx-wallet": "mcohilncbfahbmgdjkbpemcciiolgcge",
+                     "keplr": "dmkamcknogkgcdfhhbddcghachkejeap", "solflare": "bhhhlbepdkbapadjdnnojkbgioiodbic"}
+
 MAC_CHROME = "~/Library/Application Support/Google/Chrome"
 EVERY_PACK = trader_mode.build(enabled=True)
 
 
-def _same_apart_from_pack(new, old):
-    """The new findings equal the old ones once ``pack`` is taken out (every kind, since the
-    app-folder kinds joined in S4b), and ``pack``, when present, is the wallet's id."""
-    for finding in new:
-        assert finding.fields.get("pack", finding.fields["wallet"]) == finding.fields["wallet"]
-    stripped = [dataclasses.replace(f, fields={k: v for k, v in f.fields.items() if k != "pack"}) for f in new]
-    assert stripped == old
-
-
 def _detect(tool, args, active=EVERY_PACK):
-    """The new detector's findings, after checking the old one agrees (equivalence)."""
-    new = detectors.detect(tool, args, active)
-    _same_apart_from_pack(new, detect_wallet_files(tool, args))
-    return new
+    """The detector's findings, after checking that ``pack``, when present, is the wallet's id."""
+    found = detectors.detect(tool, args, active)
+    for finding in found:
+        assert finding.fields.get("pack", finding.fields["wallet"]) == finding.fields["wallet"]
+    return found
 
 
 def _reset_stores():
-    wallet_files.EXISTING_STORES.reset()
     detectors.EXISTING_STORES.reset()
 
 
@@ -91,7 +87,7 @@ def test_finding_never_carries_the_path():
 
 
 def test_a_finding_names_its_pack_by_id():
-    """F-004: the pack is named by id in ``fields["pack"]``, the person-facing name stays in the text."""
+    """The pack is named by id in ``fields["pack"]``, the person-facing name stays in the text."""
     [finding] = _detect("read_file", {"path": f"/x/Default/Local Extension Settings/{CHROME_ID}/a.log"})
     assert finding.fields["pack"] == "metamask" and "MetaMask" in finding.title
 
@@ -155,7 +151,7 @@ def test_existing_store_scan_finds_the_fake_install(fake_home):
 
 
 def test_a_firefox_vault_read_is_pack_less_and_counts_while_trader_shield_is_on():
-    """KI-366 / F-004: Firefox storage the map cannot place names no pack; it is the shield's
+    """KI-366: Firefox storage the map cannot place names no pack; it is the shield's
     as a whole, so it is returned whatever is chosen and today's gate still counts it."""
     path = "~/.mozilla/firefox/ab12.default/storage/default/moz-extension+++0b6f^userContextId=4294967295/idb/x.sqlite"
     [finding] = _detect("read_file", {"path": path})
@@ -178,7 +174,6 @@ def test_archiving_a_folder_with_several_wallets_names_every_one(monkeypatch):
     profile = browser_extension.normalize_path("~/.config/google-chrome/Default")
     stores = [(profile + "/local extension settings/" + CHROME_ID, "MetaMask"),
               (profile + "/local extension settings/" + "b" * 32, "SecondWallet")]
-    monkeypatch.setattr(wallet_files.EXISTING_STORES, "get", lambda: stores)
     monkeypatch.setattr(detectors.EXISTING_STORES, "get",
                         lambda: [(path, Owner(name.lower(), name)) for path, name in stores])
     command = {"command": "tar czf /tmp/x.tgz ~/.config/google-chrome"}
@@ -243,7 +238,7 @@ def test_archiving_a_snap_or_flatpak_chromium_profile_is_found(tmp_path, monkeyp
         _reset_stores()
 
 
-# -- built from data: the packs and browsers.json, not WALLETS / _browser_roots (S4a) ------------
+# -- built from data: the packs and browsers.json, not WALLETS / _browser_roots ------------
 
 def test_a_pack_with_no_chromium_id_matches_no_chromium_path(tmp_path):
     """An empty id alternation would match every extension folder; such a pack gets no pattern."""
@@ -257,34 +252,44 @@ def test_a_pack_with_no_chromium_id_matches_no_chromium_path(tmp_path):
 def test_planned_and_other_kind_packs_build_no_matcher():
     built = {pack.id for pack in detectors.matcher().packs}
     assert built == {pack.id for pack in trader_mode.wallet_packs()
-                     if pack.status == "supported" and pack.kind == browser_extension.KIND} == {"metamask", "phantom"}
+                     if pack.status == "supported" and pack.kind == browser_extension.KIND} == {"metamask", "phantom", *NEW_EXTENSION_IDS}
+
+
+#: The store globs ``detection.wallet_files._store_globs`` gave under any browser folder.
+RECORDED_FIREFOX_GLOBS = ("storage/default/moz-extension+++*",)
+RECORDED_CHROMIUM_GLOBS = tuple(
+    glob for store_id in (CHROME_ID, EDGE_ID, PHANTOM_ID, *NEW_EXTENSION_IDS.values()) for profile in ("*/", "")
+    for glob in (f"{profile}Local Extension Settings/{store_id}", f"{profile}Sync Extension Settings/{store_id}",
+                 f"{profile}IndexedDB/chrome-extension_{store_id}_0.indexeddb.*"))
 
 
 @pytest.mark.parametrize("env", [
     {"XDG_CONFIG_HOME": None, "APPDATA": None, "LOCALAPPDATA": None},
     {"XDG_CONFIG_HOME": "/elsewhere/.Config", "APPDATA": "C:/Users/T/AppData/Roaming", "LOCALAPPDATA": "C:/Users/T/AppData/Local"},
 ])
-def test_roots_and_store_globs_equal_todays(monkeypatch, tmp_path, env):
-    """Proof step 3a: the 31 roots expand to today's ``_browser_roots()``, and each root's store
-    globs are today's ``_store_globs`` for that root's engine (Firefox storage under Firefox
-    roots, the Chromium stores under Chromium roots)."""
+def test_roots_and_store_globs_equal_the_recorded_ones(monkeypatch, tmp_path, env):
+    """Proof step 3a: the 31 roots expand to what the old ``_browser_roots()`` gave, and each
+    root's store globs are the old ``_store_globs`` for that root's engine (Firefox storage
+    under Firefox roots, the Chromium stores under Chromium roots)."""
     monkeypatch.setenv("HOME", str(tmp_path))
     for name, value in env.items():
         if value is None:
             monkeypatch.delenv(name, raising=False)
         else:
             monkeypatch.setenv(name, value)
+    folders = {"~": str(tmp_path), "$XDG_CONFIG_HOME": env["XDG_CONFIG_HOME"] or f"{tmp_path}/.config",
+               "%APPDATA%": env["APPDATA"] or f"{tmp_path}/AppData/Roaming",
+               "%LOCALAPPDATA%": env["LOCALAPPDATA"] or f"{tmp_path}/AppData/Local"}
+    recorded = [folders[root] + "/" + rest for root, _, rest in (path.partition("/") for path in RECORDED_BROWSER_ROOTS)]
     roots = detectors.browser_roots()
     expanded = [detectors.expand_template(root.path) for root in roots]
-    assert len(roots) == 31 and sorted(expanded) == sorted(wallet_files._browser_roots())
-    firefox_glob = "moz-extension+++*"
+    assert len(roots) == 31 and sorted(expanded) == sorted(recorded)
     for root, folder in zip(roots, expanded):
-        today = wallet_files._store_globs(folder)
-        engine_part = [g for g in today if g.endswith(firefox_glob) == (root.engine == "firefox")]
-        assert detectors.matcher().store_globs(folder, root.engine) == engine_part, root.path
+        globs = RECORDED_FIREFOX_GLOBS if root.engine == "firefox" else RECORDED_CHROMIUM_GLOBS
+        assert detectors.matcher().store_globs(folder, root.engine) == [os.path.join(folder, glob) for glob in globs], root.path
 
 
-# -- the attack table's vault and Firefox rows, through both detectors ----------------------------
+# -- the attack table's vault and Firefox rows, pinned to what both detectors gave ----------------
 
 VAULT_ROWS = [row for row in ATTACKS   # page rows with their tool calls (_trader_attack_table)
               if row["proof"] == "test" and (row["group"] == "vault" or "firefox" in row["id"])]
@@ -305,6 +310,12 @@ def attack_home(tmp_path, monkeypatch):
     values = {"@VAULTFILE@": str(vault / "000003.log"), "@PHANTOMFILE@": str(phantom / "000003.log"),
               "@VAULT@": "~/.config/google-chrome/Default/Local\\ Extension\\ Settings/" + CHROME_ID,
               "@PHANTOM@": "~/.config/google-chrome/Default/Local\\ Extension\\ Settings/" + PHANTOM_ID}
+    # The wallets promoted to supported on 2026-10-16, each in its own Chrome store (@<PACK>FILE@).
+    for pack, store_id in NEW_EXTENSION_IDS.items():
+        store = vault.parent / store_id
+        store.mkdir(parents=True)
+        (store / "000003.log").write_text("vault", encoding="utf-8")
+        values["@" + re.sub(r"[^A-Z0-9]", "", pack.upper()) + "FILE@"] = str(store / "000003.log")
 
     def fill(text):
         for marker, real in values.items():
@@ -316,14 +327,35 @@ def attack_home(tmp_path, monkeypatch):
     _reset_stores()
 
 
+#: The packs each row's findings named (None: the pack-less Firefox finding), recorded on the
+#: last run where the old and new detectors agreed.
+RECORDED_ROW_PACKS = {
+    "vault-file-tool": ["metamask"], "vault-archive-profile": ["metamask", "phantom", *NEW_EXTENSION_IDS], "vault-copy": ["metamask"],
+    "vault-zip": ["metamask"], "phantom-vault-file-tool": ["phantom"], "phantom-vault-copy": ["phantom"],
+    "phantom-backup-copy": ["phantom"], "vault-firefox": [None], "vault-encode": ["metamask"],
+    "vault-grep": ["metamask", "phantom", *NEW_EXTENSION_IDS], "exodus-wallet-zip": ["exodus"], "electrum-wallet-copy": ["electrum"],
+    "solana-cli-keyfile-read": ["solana-cli"], "solana-cli-pubkey-left-alone": [],
+    "vault-script-one-liner": ["metamask"], "vault-script-home-join": ["solana-cli"],
+    "vault-find-exec": ["metamask", "phantom", *NEW_EXTENSION_IDS], "find-in-project-left-alone": [], "vault-rsync-out": ["metamask"],
+    "coinbase-wallet-vault-file-tool": ["coinbase-wallet"],
+    "rabby-vault-file-tool": ["rabby"],
+    "trust-wallet-vault-file-tool": ["trust-wallet"],
+    "okx-wallet-vault-file-tool": ["okx-wallet"],
+    "keplr-vault-file-tool": ["keplr"],
+    "solflare-vault-file-tool": ["solflare"],
+}
+
+
 def test_the_attack_table_has_vault_and_firefox_rows():
     ids = {row["id"] for row in VAULT_ROWS}
     assert {"vault-file-tool", "vault-archive-profile", "vault-firefox", "phantom-backup-copy"} <= ids
 
 
 @pytest.mark.parametrize("row", VAULT_ROWS, ids=[row["id"] for row in VAULT_ROWS])
-def test_every_vault_and_firefox_row_gives_the_same_findings(attack_home, row):
+def test_every_vault_and_firefox_row_gives_the_recorded_findings(attack_home, row):
     args = {key: attack_home(value) if isinstance(value, str) else value for key, value in row["args"].items()}
-    new = _detect(row["tool"], args)
+    found = _detect(row["tool"], args)
+    assert [finding.fields.get("pack") for finding in found] == RECORDED_ROW_PACKS[row["id"]]
+    assert all(finding.identifier == f"fileaccess:{row['tool']}:crypto-wallet" for finding in found)
     if row["outcome"] == "blocked":
-        assert new, row["id"]
+        assert found, row["id"]

@@ -16,6 +16,7 @@ import time
 from datetime import date, timedelta
 
 import pytest
+from _clock import utc_today
 from _community_rows import GRAPH, Reporter
 from _machines import SWM, Machine
 from test_blackbox_curate_community import CFG, THREAT, Curators, _listing
@@ -133,7 +134,7 @@ def test_a_rejection_supersedes_the_confirmation_it_follows(tmp_path, monkeypatc
 def test_a_listing_past_the_day_readers_stop_counting_it_is_retired(tmp_path, monkeypatch):
     team = Curators(tmp_path, monkeypatch)
     alice = Reporter("0xa")
-    far = (date.today() + timedelta(days=300)).isoformat()             # the listing states 300 days; readers count 90
+    far = (utc_today() + timedelta(days=300)).isoformat()             # the listing states 300 days; readers count 90
     team.two_key(Kind.COUNTED_AUTHORS, f"author:{alice.author}", _listing(alice, expires=far))
     assert _keep_alive(team, team.b, NOW + (cv.COMMUNITY_LISTING_MAX_DAYS - 20) * DAY) == 1   # still counted: kept alive
     assert _keep_alive(team, team.b, NOW + (cv.COMMUNITY_LISTING_MAX_DAYS + 2) * DAY) == 0
