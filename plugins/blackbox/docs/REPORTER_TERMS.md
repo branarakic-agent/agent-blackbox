@@ -118,7 +118,9 @@ rule built from it, which names it, in Verified Memory (section 4). The graph is
 shared and replicated: a published statement cannot be deleted by you, by
 Umanitek or by anyone; you can RETRACT a report (`blackbox report --retract`)
 and every current reader stops counting it, but the record of the statement
-stays on the network. A promotion stays in Verified Memory permanently.
+stays on the network. A promotion stays in Verified Memory permanently, and
+your retraction does not withdraw it: only the curators' revocation stops a
+rule promoted from your report (section 4).
 
 ## 3. What you promise
 
@@ -193,7 +195,9 @@ stays on the network. A promotion stays in Verified Memory permanently.
 - **Access and export:** `blackbox report --export FILE` writes your key
   backup and your local ledger of every statement this node made.
 - **Correction / withdrawal of a statement:** `blackbox report --retract`,
-  `blackbox report --false-positive`.
+  `blackbox report --false-positive`. A retraction withdraws your report;
+  a verified rule already promoted from it stays until the curators revoke
+  it, which you can ask Umanitek to do (section 4).
 - **Erasure of your identity:** `blackbox report --erase-identity --confirm`
   destroys the reporter key and every local share record, including the
   keep-alive memory, so this node can never re-publish its old statements.
