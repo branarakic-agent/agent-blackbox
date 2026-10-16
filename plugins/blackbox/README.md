@@ -356,7 +356,7 @@ itself next to the rule is built but switched off until the DKG can carry it.
 |---|---|
 | A promotion is permanent | Verified Memory cannot remove or change what was published, so neither Umanitek nor the reporter can |
 | Anyone can see which report a verified rule came from | the rule names the report, and with it the reporter's DKG agent address and public key |
-| A revocation still works | it stops the rule counting on every reader, but cannot remove it; a reporter's retraction stops only the report |
+| Only the curators can withdraw it | a revocation or a correction stops the rule counting on every reader, but cannot remove it; a reporter's retraction stops only the report |
 | Erasing your identity does not reach it | the rule keeps naming the key and address the report was signed with |
 
 The reporter identity stays pseudonymous, as everywhere else in Blackbox. The

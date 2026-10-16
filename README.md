@@ -369,10 +369,10 @@ Memory holds the rule and that reference; the report itself stays in shared memo
 any other. Reports of malicious packages, indicators, skills and file access can be promoted; an
 injection report carries only a hash of its pattern and never is. A promotion is permanent: nobody
 can remove or change it, and erasing an identity does not reach it. Anyone can see which report a
-verified rule came from, and so its reporter. A revocation stops it counting on every reader; a
-retraction stops only the report. Publishing the report itself next to the rule is built but
-switched off until the DKG can carry it. The reporter terms (version 1.4) say all of this before
-anyone shares.
+verified rule came from, and so its reporter. Only the curators can stop it counting, with a
+revocation or a correction; a retraction stops only the report. Publishing the report itself next to
+the rule is built but switched off until the DKG can carry it. The reporter terms (version 1.4) say
+all of this before anyone shares.
 
 **When both have spoken, the most restrictive word wins** (under one graph only the verified
 authority speaks)

@@ -21,9 +21,9 @@ Version: 1.4 (draft for counsel review, 2026-10-16)
   which carries the REPORTER ADDRESS, the digest of what the reporter signed,
   and the reporter public key. The report can be yours (section 4).
 - A PROMOTION IS PERMANENT. Nobody can remove or change it: not you, not
-  Umanitek, not anyone. The curators' revocation stops it counting, but
-  cannot remove it; your retraction stops your report counting, not the
-  rule (sections 2 and 5).
+  Umanitek, not anyone. Only the curators can stop it counting, with a
+  revocation or a correction, and neither removes it; your retraction stops
+  your report counting, not the rule (sections 2 and 5).
 - THE LINK IS PUBLIC. Anyone can see which report a verified rule came from,
   and so the reporter address and reporter public key it names. Until now a
   promotion carried random ids in place of the reports behind it, and only
@@ -119,8 +119,8 @@ shared and replicated: a published statement cannot be deleted by you, by
 Umanitek or by anyone; you can RETRACT a report (`blackbox report --retract`)
 and every current reader stops counting it, but the record of the statement
 stays on the network. A promotion stays in Verified Memory permanently, and
-your retraction does not withdraw it: only the curators' revocation stops a
-rule promoted from your report (section 4).
+your retraction does not withdraw it: only the curators can stop a rule
+promoted from your report, with a revocation or a correction (section 4).
 
 ## 3. What you promise
 
@@ -164,8 +164,9 @@ rule promoted from your report (section 4).
   injection report cannot. A promotion is PERMANENT: nobody can remove or
   change it. Anyone can read it and see which report and reporter it came
   from. Your report itself stays in shared memory and expires like any other
-  once your node stops keeping it alive. A revocation by the curators stops it
-  counting on every reader; it stays readable. Your retraction stops your
+  once your node stops keeping it alive. Only the curators can stop it
+  counting on every reader, with a revocation or a correction; it stays
+  readable. Your retraction stops your
   report counting, not the rule: to have a rule revoked, ask Umanitek (the
   contact is in the controller map).
 - The curators can also publish the report itself, exactly as its reporter
@@ -198,7 +199,7 @@ rule promoted from your report (section 4).
 - **Correction / withdrawal of a statement:** `blackbox report --retract`,
   `blackbox report --false-positive`. A retraction withdraws your report;
   a verified rule already promoted from it stays until the curators revoke
-  it, which you can ask Umanitek to do (section 4).
+  or correct it, which you can ask Umanitek to do (section 4).
 - **Erasure of your identity:** `blackbox report --erase-identity --confirm`
   destroys the reporter key and every local share record, including the
   keep-alive memory, so this node can never re-publish its old statements.
