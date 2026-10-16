@@ -154,19 +154,20 @@ rule promoted from your report (section 4).
   reporters, confirm, reject or defer a community threat, and pause intake
   for up to 7 days; their statements can only make a threat FLAG,
   never block.
-- PROMOTION. Umanitek's curators promote a threat with a verified rule
-  built from one report they select, by default the earliest shared for it.
-  Two curators sign it, and it is published to the graph's VERIFIED MEMORY.
-  The rule carries the threat's identifier and fields, and names the report
-  it came from: the report's subject, which carries your REPORTER ADDRESS,
-  the digest of what you signed, and your reporter public key. Reports of
+- PROMOTION. Umanitek's curators promote a threat with a verified rule built
+  from one report they select, by default the earliest shared for it. Two
+  curators sign it, and it is published to the graph's VERIFIED MEMORY. The
+  rule carries the threat's identifier and fields, and names the report it
+  came from: the report's subject, which carries your REPORTER ADDRESS, the
+  digest of what you signed, and your reporter public key. Reports of
   malicious packages, indicators, skills and file access can be promoted; an
   injection report cannot. A promotion is PERMANENT: nobody can remove or
   change it. Anyone can read it and see which report and reporter it came
-  from. A revocation by the curators stops it counting on every reader; it
-  stays readable. Your retraction stops your report counting, not the rule:
-  to have a rule revoked, ask Umanitek (the contact is in the controller
-  map).
+  from. Your report itself stays in shared memory and expires like any other
+  once your node stops keeping it alive. A revocation by the curators stops it
+  counting on every reader; it stays readable. Your retraction stops your
+  report counting, not the rule: to have a rule revoked, ask Umanitek (the
+  contact is in the controller map).
 - The curators can also publish the report itself, exactly as its reporter
   signed it, next to the rule. That step is built but switched off until the
   DKG can carry it. Switched on, the whole report would be permanent, your

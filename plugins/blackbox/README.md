@@ -346,10 +346,11 @@ earliest shared for the threat, and the curator publishes it to the graph's
 Verified Memory: a verified rule built from that report. The rule names the
 report it came from: the report's subject, which carries the reporter's DKG
 agent address, the digest of what the reporter signed, and the reporter's
-public key. Reports of malicious packages, indicators, skills and file access
-can be promoted; an injection report carries only a hash of its pattern and
-never is. Publishing the report itself next to the rule is built but switched
-off until the DKG can carry it.
+public key. Verified Memory holds the rule and that reference; the report
+itself stays in shared memory and expires like any other. Reports of malicious
+packages, indicators, skills and file access can be promoted; an injection
+report carries only a hash of its pattern and never is. Publishing the report
+itself next to the rule is built but switched off until the DKG can carry it.
 
 | What follows | Why |
 |---|---|

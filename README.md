@@ -364,13 +364,15 @@ flowchart LR
 **Promoted reports.** Two curator keys sign a promotion of one report, by default the earliest
 shared for the threat, and the curator publishes it to Verified Memory: a verified rule built from
 that report. The rule names the report it came from: its subject, which carries the reporter's DKG
-agent address, the digest of what the reporter signed, and the reporter's public key. Reports of
-malicious packages, indicators, skills and file access can be promoted; an injection report carries
-only a hash of its pattern and never is. A promotion is permanent: nobody can remove or change it,
-and erasing an identity does not reach it. Anyone can see which report a verified rule came from,
-and so its reporter. A revocation stops it counting on every reader; a retraction stops only the
-report. Publishing the report itself next to the rule is built but switched off until the DKG can
-carry it. The reporter terms (version 1.4) say all of this before anyone shares.
+agent address, the digest of what the reporter signed, and the reporter's public key. Verified
+Memory holds the rule and that reference; the report itself stays in shared memory and expires like
+any other. Reports of malicious packages, indicators, skills and file access can be promoted; an
+injection report carries only a hash of its pattern and never is. A promotion is permanent: nobody
+can remove or change it, and erasing an identity does not reach it. Anyone can see which report a
+verified rule came from, and so its reporter. A revocation stops it counting on every reader; a
+retraction stops only the report. Publishing the report itself next to the rule is built but
+switched off until the DKG can carry it. The reporter terms (version 1.4) say all of this before
+anyone shares.
 
 **When both have spoken, the most restrictive word wins** (under one graph only the verified
 authority speaks)
