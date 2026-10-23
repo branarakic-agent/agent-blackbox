@@ -568,22 +568,27 @@ class Trial:
         curator's node approves each one: :meth:`_admit`. Every member's first write goes through
         within ``WRITABLE_S`` of its approval and is never refused as fatal for a missing signing
         key, and the other member's and the curator's nodes receive it within the read bound."""
-        return self._admissions({"reporter-a": ("reporter-b", "curator-2"), "reporter-b": ("reporter-a", "curator-2")})
+        return self._admissions({"reporter-a": ("reporter-b", "curator-2"), "reporter-b": ("reporter-a", "curator-2")},
+                                curator_readers=("reporter-a", "reporter-b"), tag="admit")
 
     def step_fresh_member(self) -> dict[str, Any]:
         """Reporter C's node, added after the promotion, asks to join a graph that already has a member
         list (the case of OriginTrail/dkg#3421: a fresh member never received the curator's list naming
         it, and every write it made was refused as fatal), with the same bounds as ``admit``."""
-        return self._admissions({"reporter-c": ("reporter-a", "reporter-b", "curator-2")})
+        return self._admissions({"reporter-c": ("reporter-a", "reporter-b", "curator-2")},
+                                curator_readers=("reporter-c",), tag="fresh")
 
-    def _admissions(self, members: dict[str, tuple[str, ...]]) -> dict[str, Any]:
+    def _admissions(self, members: dict[str, tuple[str, ...]], *, curator_readers: tuple[str, ...] = (),
+                    tag: str = "admit") -> dict[str, Any]:
         """Admit each member in turn (:meth:`_admit`), time its first write's arrival on *readers*
-        (in the background, while the next member is admitted), then judge every member."""
+        (in the background, while the next member is admitted); then the curator (the graph's owner)
+        writes once and its write is timed on *curator_readers* (curator to members, which
+        OriginTrail/dkg#3421 found broken); then judge every member and the curator's write."""
         admitted: dict[str, Any] = {}
         watchers: dict[str, ArrivalWatcher] = {}
         for name, readers in members.items():
             try:
-                admitted[name] = evidence = self._admit(name)
+                admitted[name] = evidence = self._admit(name, tag)
             except StepFailed as failed:   # never approved, so nothing was written
                 admitted[name] = evidence = {"failed": failed.summary, **failed.evidence}
             except (DkgError, DevnetError) as exc:   # a node refused a call of the join itself
@@ -595,19 +600,37 @@ class Trial:
                                                 timeout=self.read_timeout, predicate=NAME_PRED, sub_graph=None)
                 watchers[name].filed_at = write["written_at"]
                 watchers[name].start()
+        curator: dict[str, Any] = {}
+        if curator_readers:
+            try:
+                curator = self._first_write("curator-2", time.time(), f"{tag}-curator")
+            except (DkgError, DevnetError) as exc:
+                curator = {"failed": f"the curator's write: {type(exc).__name__}: {str(exc)[:400]}"}
+            if curator.get("written_after_s") is not None:
+                watchers["curator-2"] = ArrivalWatcher({reader: self.cluster.api_of(reader) for reader in curator_readers},
+                                                       graph=self.state.graph_id, subject=curator["subject"],
+                                                       timeout=self.read_timeout, predicate=NAME_PRED, sub_graph=None)
+                watchers["curator-2"].filed_at = curator["written_at"]
+                watchers["curator-2"].start()
         for name, watcher in watchers.items():
             watcher.join(self.read_timeout + 60)
-            admitted[name]["arrivals"] = watcher.result()
+            (curator if name == "curator-2" else admitted[name])["arrivals"] = watcher.result()
         checks = _Checks(self.keep_going)
         for name, evidence in admitted.items():
             checks.run(f"{name}'s admission", lambda name=name, evidence=evidence: _judge_admission(
                 name, evidence, self.read_timeout))
+        if curator_readers:
+            checks.run("the curator's write reaches the members", lambda: _judge_curator_write(
+                curator, self.read_timeout))
         churn = self._curator_churn(since=self._step_started)
-        checks.done(admitted=admitted, curator_link_churn=churn)
-        return {"summary": "; ".join(_admission_text(name, evidence) for name, evidence in admitted.items()),
-                "admitted": admitted, "curator_link_churn": churn}
+        checks.done(admitted=admitted, curator_write=curator, curator_link_churn=churn)
+        texts = [_admission_text(name, evidence) for name, evidence in admitted.items()]
+        if curator_readers:
+            texts.append(_curator_write_text(curator))
+        return {"summary": "; ".join(texts), "admitted": admitted, "curator_write": curator,
+                "curator_link_churn": churn}
 
-    def _admit(self, name: str) -> dict[str, Any]:
+    def _admit(self, name: str, tag: str = "admit") -> dict[str, Any]:
         """*name*'s node publishes its profile and asks to join (the application's call); once the curator's
         node lists the request, the curator approves it; then *name* writes into the graph's shared memory
         (:meth:`_first_write`). Raises only when the curator's node never listed the request."""
@@ -625,19 +648,19 @@ class Trial:
                                  f"{self.proposal_timeout:.0f} s", request=asked)
             approval = self.cluster.approve_join(agent)
         approved_at = time.time()
-        write = self._first_write(name, approved_at)
+        write = self._first_write(name, approved_at, f"{tag}-member")
         logs = self._admission_logs(name, since=started, approved_at=approved_at)
         return {"agent": agent, "request": asked, "listed_after_s": None if listed_after is None
                 else round(listed_after), "approval": approval, "write": write, "logs": logs}
 
-    def _first_write(self, name: str, approved_at: float) -> dict[str, Any]:
+    def _first_write(self, name: str, approved_at: float, tag: str = "admit-member") -> dict[str, Any]:
         """From the approval on, *name* writes one asset into the graph's shared memory (root): create it
         in Working Memory, share it, follow the share job. A refused try is tried again every
         ``WRITE_RETRY_S`` until ``WRITE_TRY_S``. Records every try, when the node's listing first said
         the caller is involved, and whether a refusal was the fatal one."""
         api = self.cluster.api_of(name)
-        asset = f"bb-trial-member-write-{name}-{self.state.stamp}"
-        subject = f"urn:bb-trial:{self.state.stamp}:member-write:{name}"
+        asset = f"bb-trial-{tag}-write-{name}-{self.state.stamp}"
+        subject = f"urn:bb-trial:{self.state.stamp}:{tag}-write:{name}"
         quads = [{"subject": subject, "predicate": NAME_PRED, "object": json.dumps(f"first write of {name}")}]
         tries: list[dict[str, Any]] = []
         involved_after: Optional[float] = None
@@ -976,6 +999,27 @@ def _judge_admission(name: str, evidence: dict[str, Any], read_timeout: float) -
     if missing:
         raise StepFailed(f"{', '.join(missing)} did not receive {name}'s first write within {read_timeout:.0f} s")
     return evidence
+
+
+def _judge_curator_write(evidence: dict[str, Any], read_timeout: float) -> dict[str, Any]:
+    """The curator's own write went through and every member it was timed on had it within *read_timeout*."""
+    if "failed" in evidence:
+        raise StepFailed(evidence["failed"])
+    if evidence.get("written_after_s") is None:
+        raise StepFailed(f"the curator's write did not go through in {WRITE_TRY_S:.0f} s")
+    seconds = (evidence.get("arrivals") or {}).get("seconds_after_share") or {}
+    missing = sorted(reader for reader, value in seconds.items() if value is None)
+    if missing:
+        raise StepFailed(f"{', '.join(missing)} did not receive the curator's write within {read_timeout:.0f} s")
+    return evidence
+
+
+def _curator_write_text(evidence: dict[str, Any]) -> str:
+    if "failed" in evidence or evidence.get("written_after_s") is None:
+        return f"the curator's write: {evidence.get('failed') or 'did not go through'}"
+    arrivals = ((evidence.get("arrivals") or {}).get("seconds_after_share") or {})
+    return "the curator's write reached " + ", ".join(
+        f"{reader} " + (f"+{value:.0f} s" if value is not None else "not yet") for reader, value in sorted(arrivals.items()))
 
 
 def _admission_text(name: str, evidence: Any) -> str:

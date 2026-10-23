@@ -330,3 +330,18 @@ def test_an_admission_passes_only_for_a_prompt_unrefused_write_that_reaches_ever
             _judge_admission("reporter-c", failing, 600.0)
     assert "did not go through" in _admission_text("reporter-c", evidence(None))
     assert "wrote 5 s after its approval" in _admission_text("reporter-c", evidence(5.0))
+
+
+def test_the_curators_write_must_reach_every_member_it_is_timed_on():
+    from blackbox_one_graph_trial.report import StepFailed
+    from blackbox_one_graph_trial.steps import _curator_write_text, _judge_curator_write
+
+    reached = {"written_after_s": 2.0, "arrivals": {"seconds_after_share": {"reporter-a": 3.0, "reporter-b": 9.0}}}
+    assert _judge_curator_write(reached, 600.0) is reached
+    assert "reporter-a +3 s, reporter-b +9 s" in _curator_write_text(reached)
+    for failing, words in (({"written_after_s": None}, "did not go through"),
+                           ({"written_after_s": 2.0, "arrivals": {"seconds_after_share": {"reporter-c": None}}},
+                            "reporter-c did not receive"),
+                           ({"failed": "the curator's write: DkgError: 503"}, "503")):
+        with pytest.raises(StepFailed, match=words):
+            _judge_curator_write(failing, 600.0)
