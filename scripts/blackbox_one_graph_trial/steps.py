@@ -67,6 +67,9 @@ WRITE_TRY_S = 240.0
 #: Seconds between two tries of a member's first write that was refused, and the bound of one share job.
 WRITE_RETRY_S = 5.0
 SHARE_JOB_S = 120.0
+#: How long a member's node may take to learn of its approval (its log line ``Join request approved for "<graph>"``,
+#: written by every build since 10.0.24) before its first write is tried anyway.
+APPROVAL_KNOWN_S = 60.0
 #: The refusal of a write whose signer is not on the graph's member list: fatal on DKG 10.0.25 (the write is
 #: lost); a retryable wait while an approved member's list is on its way on later builds ("... key yet: agent
 #: ... is approved ...").
@@ -635,6 +638,7 @@ class Trial:
         node lists the request, the curator approves it; then *name* writes into the graph's shared memory
         (:meth:`_first_write`). Raises only when the curator's node never listed the request."""
         started = time.time()
+        created = self._prepare_write(name, f"{tag}-member")
         asked = self.cluster.request_join(name, self.state.curator_peer)
         agent = asked["agent"]
         answer = asked["request_join"] if isinstance(asked["request_join"], dict) else {}
@@ -648,20 +652,48 @@ class Trial:
                                  f"{self.proposal_timeout:.0f} s", request=asked)
             approval = self.cluster.approve_join(agent)
         approved_at = time.time()
-        write = self._first_write(name, approved_at, f"{tag}-member")
+        write = self._first_write(name, approved_at, f"{tag}-member", created=created)
         logs = self._admission_logs(name, since=started, approved_at=approved_at)
         return {"agent": agent, "request": asked, "listed_after_s": None if listed_after is None
                 else round(listed_after), "approval": approval, "write": write, "logs": logs}
 
-    def _first_write(self, name: str, approved_at: float, tag: str = "admit-member") -> dict[str, Any]:
-        """From the approval on, *name* writes one asset into the graph's shared memory (root): create it
-        in Working Memory, share it, follow the share job. A refused try is tried again every
-        ``WRITE_RETRY_S`` until ``WRITE_TRY_S``. Records every try, when the node's listing first said
-        the caller is involved, and whether a refusal was the fatal one."""
-        api = self.cluster.api_of(name)
+    def _write_names(self, name: str, tag: str) -> tuple[str, str, list[dict[str, str]]]:
         asset = f"bb-trial-{tag}-write-{name}-{self.state.stamp}"
         subject = f"urn:bb-trial:{self.state.stamp}:{tag}-write:{name}"
-        quads = [{"subject": subject, "predicate": NAME_PRED, "object": json.dumps(f"first write of {name}")}]
+        return asset, subject, [{"subject": subject, "predicate": NAME_PRED, "object": json.dumps(f"first write of {name}")}]
+
+    def _prepare_write(self, name: str, tag: str) -> dict[str, Any]:
+        """Before its join request, *name* creates the asset it will share in its own Working Memory (no
+        membership needed there), so its first share can go out the moment its node knows it is approved."""
+        asset, _subject, quads = self._write_names(name, tag)
+        return _create_asset(self.cluster.api_of(name), self.state.graph_id, asset, quads)
+
+    def _approval_known(self, name: str, since: float) -> Optional[float]:
+        """When *name*'s node logged that its join request for the trial's graph was approved (epoch s), or None."""
+        window = getattr(self.cluster.devnet, "log_window", None)
+        if window is None:
+            return None
+        mark = f'Join request approved for "{self.state.graph_id}"'
+        for line in window(self.cluster._node_of(name).number, since):
+            if mark in line:
+                return _line_time(line) or time.time()
+        return None
+
+    def _first_write(self, name: str, approved_at: float, tag: str = "admit-member", *,
+                     created: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+        """From the approval on, *name* writes one asset into the graph's shared memory (root). A member
+        (*created*: its asset was created before its join request) first waits until its own node logs the
+        approval (at most ``APPROVAL_KNOWN_S``): a write before that is refused for want of an approval, not
+        for a missing member list (OriginTrail/dkg#3421 is the latter). Then share, follow the share job; a
+        refused try is tried again every ``WRITE_RETRY_S`` until ``WRITE_TRY_S``. Records every try, when the
+        node learned of its approval and when its listing first said the caller is involved, and whether a
+        refusal was the fatal one."""
+        api = self.cluster.api_of(name)
+        asset, subject, quads = self._write_names(name, tag)
+        known_after: Optional[float] = None
+        if created is not None:
+            known, _waited = _wait(lambda: self._approval_known(name, approved_at - 5), APPROVAL_KNOWN_S, 0.5)
+            known_after = round(max(0.0, known - approved_at), 1) if known else None
         tries: list[dict[str, Any]] = []
         involved_after: Optional[float] = None
         written_after: Optional[float] = None
@@ -683,6 +715,7 @@ class Trial:
             time.sleep(WRITE_RETRY_S)
         return {"subject": subject, "asset": asset, "written_after_s": written_after,
                 "written_at": approved_at + (written_after or 0.0), "caller_involved_after_s": involved_after,
+                "approval_known_after_s": known_after, "created_before_join": created,
                 "fatal": any(t.get("fatal") for t in tries), "tries": len(tries),
                 "refusals": [t for t in tries if not t["ok"]][:8]}
 
@@ -942,16 +975,24 @@ def _is_verified(answer: dict[str, Any], threat: Threat) -> bool:
                 and rule.get("asset_tier") != "flag" and threat.identifier in answer.get("verified_subset", []))
 
 
-def _write_once(api: NodeApi, graph: str, asset: str, quads: list[dict[str, str]]) -> dict[str, Any]:
-    """One try of a member's write into *graph*'s shared memory (root), as Blackbox's client makes it:
-    create *asset* in Working Memory (one an earlier try sealed is shared as it is), queue its share,
-    follow the share job to its end (at most ``SHARE_JOB_S``)."""
+def _create_asset(api: NodeApi, graph: str, asset: str, quads: list[dict[str, str]]) -> dict[str, Any]:
+    """Create and seal *asset* in the node's Working Memory of *graph* (an asset sealed before counts as created)."""
     try:
         api.call("POST", "/api/knowledge-assets", {"contextGraphId": graph, "name": asset, "quads": quads,
                                                    "alsoShareSwm": False}, timeout=180.0)
     except DkgError as exc:
         if not (_is_already_finalized(exc) or _is_wm_merkle_conflict(exc)):
             return _refusal("create", str(exc))
+    return {"ok": True, "stage": "create"}
+
+
+def _write_once(api: NodeApi, graph: str, asset: str, quads: list[dict[str, str]]) -> dict[str, Any]:
+    """One try of a write into *graph*'s shared memory (root), as Blackbox's client makes it: create
+    *asset* in Working Memory (one an earlier try sealed is shared as it is), queue its share, follow
+    the share job to its end (at most ``SHARE_JOB_S``)."""
+    created = _create_asset(api, graph, asset, quads)
+    if not created["ok"]:
+        return created
     try:
         queued = api.client.share_async(graph, asset)
     except DkgError as exc:

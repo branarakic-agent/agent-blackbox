@@ -345,3 +345,24 @@ def test_the_curators_write_must_reach_every_member_it_is_timed_on():
                            ({"failed": "the curator's write: DkgError: 503"}, "503")):
         with pytest.raises(StepFailed, match=words):
             _judge_curator_write(failing, 600.0)
+
+
+def test_a_members_first_share_waits_for_its_own_approval_line(tmp_path):
+    from blackbox_one_graph_trial.steps import _create_asset
+
+    graph = "0xabc/bb-trial-x"
+    lines = ["[2026-10-23T18:51:02.000Z] Forwarded join request for \"0xabc/bb-trial-x\" from 0x1",
+             f"2026-10-23 20:51:06 system id [DKGAgent] Join request approved for \"{graph}\" — auto-subscribing"]
+    node = SimpleNamespace(number=4)
+    cluster = SimpleNamespace(actors={}, links=None, testnet=True, _node_of=lambda name: node,
+                              devnet=SimpleNamespace(log_window=lambda number, since: list(lines)))
+    trial = Trial(cluster, TrialReport(tmp_path), TrialState(stamp="s", graph_id=graph))
+
+    assert trial._approval_known("reporter-c", since=0.0) is not None
+    lines.pop()
+    assert trial._approval_known("reporter-c", since=0.0) is None
+    sealed = _FakeApi([DkgError("409: assertion already finalized with merkle root 0xab")])
+    assert _create_asset(sealed, graph, "a", [])["ok"] is True
+    refused = _FakeApi([DkgError("403: CONTEXT_GRAPH_NOT_WRITABLE")])
+    assert _create_asset(refused, graph, "a", []) == {"ok": False, "stage": "create",
+                                                      "error": "403: CONTEXT_GRAPH_NOT_WRITABLE", "fatal": False}
