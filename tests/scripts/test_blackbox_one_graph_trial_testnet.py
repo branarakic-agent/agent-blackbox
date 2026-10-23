@@ -86,11 +86,11 @@ def test_curator_wallets_are_the_picked_encrypted_entries(tmp_path):
     nodes = _testnet(tmp_path, wallet_source=_wallet_source(tmp_path), wallet_indexes=(2, 1))
 
     nodes._create(1, overrides={}, wallets=True)
-    stored = json.loads((nodes.home(1) / "wallets.json").read_text(encoding="utf-8"))
+    stored = json.loads((nodes.home(1) / "wallets.json").read_text(encoding="utf-8-sig"))
 
     assert nodes.wallet_addresses(1) == [f"0x{2:040x}", f"0x{1:040x}"]   # the first is the agent address
     assert "adminWallet" not in stored and all("keystore" in entry for entry in stored["wallets"])
-    assert (nodes.home(1) / "wallets.key").read_text(encoding="utf-8") == "k" * 44
+    assert (nodes.home(1) / "wallets.key").read_text(encoding="utf-8-sig") == "k" * 44
 
 
 @pytest.mark.parametrize("indexes", [(0, 1), ()])
@@ -136,7 +136,7 @@ def test_links_between_the_trials_nodes_are_relayed_or_named(tmp_path):
     assert summary["pairs"] == {"node1 - node3": {"relayed": 1, "direct": 1}}
     assert summary["relay_only"] is False
     assert summary["direct_links"][0]["from"] == "node3" and summary["direct_links"][0]["to"] == "node1"
-    assert (tmp_path / "links.jsonl").read_text(encoding="utf-8").count("\n") == 1
+    assert (tmp_path / "links.jsonl").read_text(encoding="utf-8-sig").count("\n") == 1
 
 
 def test_arrivals_are_timed_per_node():
@@ -225,3 +225,108 @@ def test_checks_keep_going_runs_every_check_and_names_the_first_failure():
     assert set(raised.value.evidence["failing_checks"]) == {"reports", "restart reports"}
     with pytest.raises(StepFailed, match="no reports"):
         _Checks(keep_going=False).run("reports", fails("no reports"))
+
+
+# -- the realistic curator addresses, member admission and extra node config (OriginTrail/dkg#3421) ----------
+
+
+def test_realistic_curator_announce_lists_private_addresses_that_take_no_connection():
+    announce = testnet.realistic_announce(RELAYS, interfaces=["192.168.1.20", "100.69.1.2"])
+
+    assert announce[0] == testnet.DEAD_ADDRESS
+    assert announce[-2:] == [f"{relay}/p2p-circuit" for relay in RELAYS]
+    direct = announce[:-2]
+    assert {"/ip4/192.168.1.20/tcp/9", "/ip4/100.69.1.2/tcp/9", *testnet.UNREACHABLE_ADDRESSES} <= set(direct)
+    assert all(address.endswith(f"/tcp/{testnet.DEAD_PORT}") for address in direct)
+    assert {address.split("/")[2].split(".")[0] for address in testnet.UNREACHABLE_ADDRESSES} == {"10", "172", "100"}
+
+
+def test_interface_addresses_leave_out_loopback_and_link_local():
+    assert all(not ip.startswith(("127.", "169.254.")) for ip in testnet.interface_addresses())
+
+
+def test_only_the_curator_announces_realistic_addresses_and_node_config_goes_on_top(tmp_path, monkeypatch):
+    monkeypatch.setattr(testnet, "interface_addresses", lambda: ["192.168.1.20"])
+    nodes = _testnet(tmp_path, curator_addresses="realistic", node_config={"DKG_Core_chain_cache": True})
+
+    nodes._create(1, overrides={}, wallets=False)
+    nodes._create(2, overrides={"syncSharedMemoryOnConnect": True}, wallets=False)
+
+    assert nodes.config(1)["announceAddresses"] == testnet.realistic_announce(RELAYS, ["192.168.1.20"])
+    assert nodes.config(2)["announceAddresses"] == testnet.relay_only_announce(RELAYS)
+    assert nodes.config(1)["DKG_Core_chain_cache"] is True and nodes.config(2)["DKG_Core_chain_cache"] is True
+    assert nodes.config(2)["syncSharedMemoryOnConnect"] is True
+
+
+def test_default_curator_keeps_the_dead_loopback_announce(tmp_path):
+    nodes = _testnet(tmp_path)
+
+    nodes._create(1, overrides={}, wallets=False)
+
+    assert nodes.config(1)["announceAddresses"] == testnet.relay_only_announce(RELAYS)
+    assert "DKG_Core_chain_cache" not in nodes.config(1)
+
+
+def test_connection_churn_counts_the_curators_closes_per_peer(tmp_path):
+    nodes = _testnet(tmp_path)
+    nodes.home(1).mkdir(parents=True)
+    lines = [f"[2026-10-23T18:00:{second:02d}.000Z] Connection closed: {peer} transport={kind} duration={ms}ms addr=x"
+             for second, peer, kind, ms in ((1, "AAAAAAAA", "relayed", 250), (2, "AAAAAAAA", "relayed", 240),
+                                            (3, "AAAAAAAA", "relayed", 900000), (4, "BBBBBBBB", "direct", 5),
+                                            (5, "CCCCCCCC", "relayed", 7))]
+    (nodes.home(1) / "daemon.log").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    churn = nodes.connection_churn(1, {"node2": "12D3KooWAAAAAAAA", "node3": "12D3KooWBBBBBBBB"}, since=0.0)
+
+    assert churn == {"node2": {"relayed": 3, "direct": 0, "median_relayed_ms": 250},
+                     "node3": {"relayed": 0, "direct": 1, "median_relayed_ms": None}}
+
+
+def test_admission_steps_follow_subscribe_and_late_join_only_when_asked():
+    from blackbox_one_graph_trial.steps import STEPS, steps_for
+
+    assert steps_for(False) == STEPS
+    keys = [key for key, _title, _needs in steps_for(True)]
+    assert keys.index("admit") == keys.index("subscribe") + 1
+    assert keys.index("fresh-member") == keys.index("late-join") + 1
+    assert len(keys) == len(STEPS) + 2
+
+
+def test_a_missing_signing_key_is_fatal_unless_it_is_an_approved_members_wait():
+    from blackbox_one_graph_trial.steps import _refusal
+
+    fatal = ('{"error": {"code": "fatal", "message": "Cannot gossip SWM write for agent-gated context graph \\"g\\": '
+             'no local allowed signing agent key", "retryable": false}, "state": "failed"}')
+    waiting = ('Cannot gossip SWM write for agent-gated context graph "g": no local allowed signing agent key yet: '
+               'agent 0xabc is approved and the curator\'s member list has not arrived')
+
+    assert _refusal("job", fatal)["fatal"] is True
+    assert _refusal("job", waiting)["fatal"] is False
+    assert _refusal("create", "400: CONTEXT_GRAPH_NOT_WRITABLE")["fatal"] is False
+
+
+def test_node_config_pairs_are_json_values_or_strings():
+    from blackbox_one_graph_trial.runner import _node_config
+
+    assert _node_config(["DKG_Core_chain_cache=true", "name=bb", "limits={\"a\": 1}"]) == {
+        "DKG_Core_chain_cache": True, "name": "bb", "limits": {"a": 1}}
+    with pytest.raises(ValueError):
+        _node_config(["no-separator"])
+
+
+def test_an_admission_passes_only_for_a_prompt_unrefused_write_that_reaches_every_reader():
+    from blackbox_one_graph_trial.report import StepFailed
+    from blackbox_one_graph_trial.steps import _admission_text, _judge_admission
+
+    def evidence(after, fatal=False, arrivals=None):
+        return {"write": {"written_after_s": after, "fatal": fatal, "tries": 2, "caller_involved_after_s": 3.0},
+                "logs": {"fatal_no_signer_key": 0}, "arrivals": {"seconds_after_share": arrivals or {"curator-2": 4.0}}}
+
+    assert _judge_admission("reporter-c", evidence(5.0), 600.0)
+    for failing, words in ((evidence(5.0, fatal=True), "fatal"), (evidence(None), "did not go through"),
+                           (evidence(75.0), "75 s after"), (evidence(5.0, arrivals={"reporter-a": None}), "reporter-a"),
+                           ({"failed": "the curator's node did not list it"}, "did not list")):
+        with pytest.raises(StepFailed, match=words):
+            _judge_admission("reporter-c", failing, 600.0)
+    assert "did not go through" in _admission_text("reporter-c", evidence(None))
+    assert "wrote 5 s after its approval" in _admission_text("reporter-c", evidence(5.0))

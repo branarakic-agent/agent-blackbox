@@ -66,6 +66,18 @@ def _parser() -> argparse.ArgumentParser:
                      help="run every step even when a step it needs did not pass (default: SKIP it)")
     run.add_argument("--cosigner-reporter", default="reporter-b", choices=("reporter-a", "reporter-b"),
                      help="testnet: the reporter whose node curator 1 works through (default reporter-b)")
+    run.add_argument("--curator-addresses", choices=("dead-loopback", "realistic"), default="dead-loopback",
+                     help="testnet: what the curator node announces besides its circuits: a dead loopback address "
+                          "(default), or what a node in a private network lists (its loopback, this machine's "
+                          "interface addresses, unreachable 10.x, 172.17.0.1 and 100.64.x addresses, all on a closed "
+                          "port; OriginTrail/dkg#3421)")
+    run.add_argument("--member-admission", action="store_true",
+                     help="admit the reporters as an application with a member list does (request-join, the "
+                          "curator's approve-join) and time each one's first write from its approval "
+                          "(steps admit and fresh-member; OriginTrail/dkg#3421)")
+    run.add_argument("--node-config", action="append", default=[], metavar="KEY=JSON",
+                     help="testnet: a config key every node of the run gets, e.g. DKG_Core_chain_cache=true "
+                          "(repeatable; the value is JSON, else a string)")
     run.add_argument("--timeout-scale", type=float, default=0.0,
                      help="multiply every wait (default 1 on a devnet, 2 on the testnet)")
     run.add_argument("--verbose", action="store_true")

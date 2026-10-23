@@ -27,9 +27,12 @@ import logging
 import subprocess
 import sys
 import time
+import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
+
+from plugins.blackbox.kernel.dkg_client import DkgError
 
 from .actors import Actor, NodeEndpoint
 from .devnet import Devnet, DevnetError, DevnetNode, NodeApi, store_port
@@ -136,6 +139,13 @@ class Cluster:
         if self.links is not None:
             self.links.start()
         relays = self.devnet.relays()
+        realistic = bool(self.options.testnet and self.options.testnet.curator_addresses == "realistic")
+        announce = ("the curator: loopback, this machine's own interface addresses, unreachable 10.x, 172.17.0.1 and "
+                    "100.64.x addresses (all on a closed port) + a circuit through each relay (OriginTrail/dkg#3421); "
+                    "reporters: dead loopback address + a circuit through each relay" if realistic else
+                    "dead loopback address + a circuit through each relay (no direct address)")
+        curator_announce = [_address_kind(address) if "/p2p-circuit" not in address else "circuit"
+                            for address in self.devnet.config(CURATOR_NUMBER).get("announceAddresses") or []]
         return {"nodes": len(self.devnet.numbers()), "network_id": str(status.get("networkId") or ""),
                 "network_config": self.options.testnet.network_config if self.options.testnet else "",
                 "curator_node": CURATOR_NUMBER, "cosigner_node": f"{self.options.cosigner_reporter}'s node (added in step edges)",
@@ -143,7 +153,9 @@ class Cluster:
                 "dkg_status_commit": str(status.get("commit") or ""),
                 "curator_wallets": self.devnet.wallet_addresses(CURATOR_NUMBER),
                 "relays": [relay.rsplit("/p2p/", 1)[-1] for relay in relays],
-                "announce": "dead loopback address + a circuit through each relay (no direct address)",
+                "announce": announce, "curator_announce_kinds": curator_announce,
+                **({"node_config": dict(self.options.testnet.node_config)}
+                   if self.options.testnet and self.options.testnet.node_config else {}),
                 "relay_status": _relay_block(status), "started_here": self.options.start_devnet}
 
     def stop_devnet(self) -> None:
@@ -284,6 +296,46 @@ class Cluster:
         if not answer.get("ok"):
             raise DevnetError(f"Blackbox's node settings could not be derived: {answer.get('error')}")
         return answer
+
+    # -- member admission (--member-admission) ----------------------------------------
+
+    def request_join(self, name: str, curator_peer: str) -> dict[str, Any]:
+        """What an application with a member list does for *name*'s node (OriginTrail/dkg#3421):
+        publish its agent profile, sign a join request for its default agent and send it to the
+        curator's node. Returns the agent address and the node's answers."""
+        api = self.api_of(name)
+        graph = urllib.parse.quote(self.graph_id, safe="")
+        try:
+            profile: Any = api.call("POST", "/api/agent/publish-profile", {}, timeout=180.0)
+        except DkgError as exc:   # best effort, as Blackbox's own client does it
+            profile = f"{type(exc).__name__}: {str(exc)[:300]}"
+        signed = api.call("POST", f"/api/context-graph/{graph}/sign-join", {}, timeout=120.0)
+        delegation = signed.get("delegation") if isinstance(signed, dict) else None
+        if not isinstance(delegation, dict) or not delegation.get("agentAddress"):
+            raise DevnetError(f"sign-join on {name}'s node returned no delegation: {json.dumps(signed)[:400]}")
+        sent = api.call("POST", f"/api/context-graph/{graph}/request-join",
+                        {"delegation": delegation, "curatorPeerId": curator_peer, "agentName": f"bb-trial-{name}"},
+                        timeout=180.0)
+        return {"agent": str(delegation["agentAddress"]).lower(), "request_join": sent,
+                "profile": profile if isinstance(profile, str) else "published"}
+
+    def pending_join(self, agent: str) -> Optional[dict[str, Any]]:
+        """The curator's pending join request of *agent* (None: not listed)."""
+        graph = urllib.parse.quote(self.graph_id, safe="")
+        rows = self.api(self.curator).call("GET", f"/api/context-graph/{graph}/join-requests",
+                                           timeout=60.0).get("requests") or []
+        return next((row for row in rows if isinstance(row, dict)
+                     and str(row.get("agentAddress") or "").lower() == agent), None)
+
+    def approve_join(self, agent: str) -> dict[str, Any]:
+        """The curator's ``approve-join`` of *agent* (what an approver on the curator runs)."""
+        graph = urllib.parse.quote(self.graph_id, safe="")
+        return self.api(self.curator).call("POST", f"/api/context-graph/{graph}/approve-join",
+                                           {"agentAddress": agent}, timeout=180.0)
+
+    def peer_ids(self) -> dict[str, str]:
+        """Node label -> peer id of the trial's nodes."""
+        return dict(self._peer_ids)
 
     def graph_row(self, name: str) -> Optional[dict[str, Any]]:
         """The trial graph's row in the listing of *name*'s node (None: not listed)."""

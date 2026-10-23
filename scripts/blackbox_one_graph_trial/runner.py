@@ -8,20 +8,23 @@ import logging
 import platform
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Optional
 
 from .cluster import Cluster, ClusterOptions
 from .report import StepResult, TrialReport
-from .steps import STATE_FILE, STEPS, Trial, TrialState, run_stamp
+from .steps import STATE_FILE, Trial, TrialState, run_stamp, steps_for
 from .testnet import TestnetOptions
 
 logger = logging.getLogger(__name__)
 
 
 def run_trial(args: argparse.Namespace, repo_root: Path) -> int:
-    if args.until and args.until not in {key for key, _title, _needs in STEPS}:
-        logger.error("unknown step %r; the steps are: %s", args.until, ", ".join(key for key, _t, _n in STEPS))
+    admission = bool(getattr(args, "member_admission", False))
+    steps = steps_for(admission)
+    if args.until and args.until not in {key for key, _title, _needs in steps}:
+        logger.error("unknown step %r; the steps are: %s", args.until, ", ".join(key for key, _t, _n in steps))
         return 2
     resumed = _load(args.resume) if args.resume else None
     stamp = resumed["state"]["stamp"] if resumed else run_stamp()
@@ -44,6 +47,12 @@ def run_trial(args: argparse.Namespace, repo_root: Path) -> int:
         report.facts["curator_1_node"] = f"{getattr(args, 'cosigner_reporter', 'reporter-b')}'s node"
     if getattr(args, "keep_going", False):
         report.facts["keep_going"] = True
+    if admission:
+        report.facts["member_admission"] = "request-join + the curator's approve-join (steps admit, fresh-member)"
+    if testnet is not None:
+        report.facts["curator_addresses"] = testnet.curator_addresses
+        if testnet.node_config:
+            report.facts["node_config"] = dict(testnet.node_config)
     state = TrialState(stamp=stamp)
     if resumed:
         state = TrialState.from_json(resumed["state"])
@@ -53,14 +62,19 @@ def run_trial(args: argparse.Namespace, repo_root: Path) -> int:
         report.steps = [step for step in resumed["steps"] if step.passed]
         logger.info("resuming %s after: %s", run_dir, ", ".join(step.key for step in report.steps) or "nothing")
     logger.info("run folder: %s", run_dir)
+    started = time.time()
     try:
         Trial(cluster, report, state, until=args.until or None, timeout_scale=scale,
-              keep_going=getattr(args, "keep_going", False)).run()
+              keep_going=getattr(args, "keep_going", False), member_admission=admission).run()
     finally:
         if args.stop_devnet:
             cluster.stop_devnet()
         if cluster.links is not None:
             report.facts["links"] = cluster.links.summary()
+        if network == "testnet" and cluster.curator is not None:   # every link of the curator's, the whole run
+            others = {label: peer for label, peer in cluster.peer_ids().items() if label != cluster.curator.label}
+            report.facts["curator_link_churn"] = cluster.devnet.connection_churn(cluster.curator.number, others,
+                                                                                 started)
         if network == "testnet":
             report.facts["node_logs"] = cluster.devnet.collect_logs(run_dir / "node-logs")
         report.write()
@@ -79,7 +93,23 @@ def _testnet_options(args: argparse.Namespace, stamp: str) -> TestnetOptions:
                           wallet_source=args.wallet_source.expanduser().resolve() if args.wallet_source else None,
                           wallet_indexes=indexes, node_bin=args.node_bin,
                           machine_lock=args.machine_lock.expanduser() if args.machine_lock else None,
-                          oxigraph_seed=args.oxigraph_seed.expanduser() if args.oxigraph_seed else None)
+                          oxigraph_seed=args.oxigraph_seed.expanduser() if args.oxigraph_seed else None,
+                          curator_addresses=getattr(args, "curator_addresses", "dead-loopback"),
+                          node_config=_node_config(getattr(args, "node_config", None) or []))
+
+
+def _node_config(pairs: list[str]) -> dict:
+    """``--node-config KEY=JSON`` pairs as config keys (a value that is not JSON is taken as a string)."""
+    config: dict = {}
+    for pair in pairs:
+        key, separator, value = pair.partition("=")
+        if not separator or not key.strip():
+            raise ValueError(f"--node-config {pair!r}: expected KEY=VALUE")
+        try:
+            config[key.strip()] = json.loads(value)
+        except ValueError:
+            config[key.strip()] = value
+    return config
 
 
 def _load(run_dir: Path) -> Optional[dict]:

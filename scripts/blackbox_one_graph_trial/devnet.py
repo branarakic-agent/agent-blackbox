@@ -226,6 +226,11 @@ class NodeApi:
              timeout: float = 60.0) -> dict[str, Any]:
         return self._client.request(method, path, body, timeout=timeout)
 
+    @property
+    def client(self) -> DkgClient:
+        """Blackbox's own client of this node (its share-job calls)."""
+        return self._client
+
     def status(self) -> dict[str, Any]:
         return self._client.status(timeout=10.0)
 

@@ -18,6 +18,12 @@ other only through the network's relays. What the trial relies on (OriginTrail/d
   connection to. ``GET /api/connections`` gives each connection's transport;
   :class:`LinkWatcher` records the links between the trial's own nodes, and the
   report names any that was direct.
+* ``--curator-addresses realistic`` (OriginTrail/dkg#3421): the curator announces
+  what a node in a private network lists, as the curator of that issue did: its
+  loopback, this machine's own interface addresses, a private range, a container
+  bridge and a VPN address in the shared range (100.64/10), all on a closed port,
+  and its circuits. Its peers then hold direct addresses for it that go nowhere,
+  which the dead loopback alone never showed them. It stays relay-only.
 * The curator node pays for the graph's registration and its Verified Memory
   publishes: it runs with operational wallets of a funded node (``wallets.json``
   entries copied encrypted as they are, plus the ``wallets.key`` that opens them).
@@ -30,6 +36,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import secrets
 import shutil
 import socket
@@ -52,7 +59,14 @@ logger = logging.getLogger(__name__)
 CURATOR_NUMBER = 1
 MAX_NODE = 9
 #: Never dialable: what each node announces besides its circuits (port 9 is "discard").
-DEAD_ADDRESS = "/ip4/127.0.0.1/tcp/9"
+DEAD_PORT = 9
+DEAD_ADDRESS = f"/ip4/127.0.0.1/tcp/{DEAD_PORT}"
+#: What a host in a private network has besides its own interfaces and no peer reaches:
+#: a private range, a container bridge, a VPN address in the shared range (100.64/10).
+UNREACHABLE_ADDRESSES = (f"/ip4/10.254.13.37/tcp/{DEAD_PORT}", f"/ip4/172.17.0.1/tcp/{DEAD_PORT}",
+                         f"/ip4/100.64.13.37/tcp/{DEAD_PORT}")
+#: ``--curator-addresses``: what the curator node announces besides its circuits.
+CURATOR_ADDRESSES = ("dead-loopback", "realistic")
 #: How the trial's machine lock starts (what tells a later run the lock is the trial's own).
 _LOCK_TEXT = "blackbox one-graph trial on the testnet"
 
@@ -77,6 +91,10 @@ class TestnetOptions:
     #: A managed Oxigraph binary another node already fetched (the node checks its pinned
     #: checksum and uses it instead of downloading the same release again).
     oxigraph_seed: Optional[Path] = None
+    #: "dead-loopback" (a dead loopback address and the circuits) or "realistic" (see the top of this file).
+    curator_addresses: str = "dead-loopback"
+    #: Config keys every node of the run gets on top of the trial's and Blackbox's (``--node-config``).
+    node_config: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -107,6 +125,11 @@ class Testnet:
         *nodes* is the devnet's node count and means nothing here."""
         if not self.cli.is_file():
             raise TestnetError(f"{self.repo} is not built (no packages/cli/dist/cli.js); build it first")
+        if self.options.curator_addresses == "realistic":
+            taking = [ip for ip in interface_addresses() if not _port_free(DEAD_PORT, ip)]
+            if taking or not _port_free(DEAD_PORT):
+                raise TestnetError(f"port {DEAD_PORT} takes connections here; the realistic curator addresses "
+                                   "need it closed")
         self._take_lock()
         if CURATOR_NUMBER not in self.numbers():
             self._create(CURATOR_NUMBER, overrides={}, wallets=True)
@@ -195,6 +218,24 @@ class Testnet:
                     picked.append(line.rstrip()[:400])
         return picked
 
+    def connection_churn(self, number: int, peers: Mapping[str, str], since: float,
+                         until: float = 0.0) -> dict[str, Any]:
+        """Per peer (label -> peer id), the connections node *number* logged as closed
+        (``Connection closed: <peer> transport=<t> duration=<ms>ms``) from *since*: how many
+        relayed and direct, and the median relayed lifetime. A relay-only link that is torn
+        down and opened again all the time shows here (OriginTrail/dkg#3421: ~250 ms)."""
+        closes: dict[str, dict[str, list[int]]] = {}
+        shorts = {peer[-8:]: label for label, peer in peers.items() if peer}
+        for line in self.log_window(number, since, until=until):
+            match = _CLOSE_LINE.search(line)
+            label = shorts.get(match.group(1)) if match else None
+            if label is not None:
+                kind = "relayed" if match.group(2) == "relayed" else "direct"
+                closes.setdefault(label, {"relayed": [], "direct": []})[kind].append(int(match.group(3) or 0))
+        return {label: {"relayed": len(kinds["relayed"]), "direct": len(kinds["direct"]),
+                        "median_relayed_ms": _median(kinds["relayed"])}
+                for label, kinds in sorted(closes.items())}
+
     def pids(self, number: int) -> list[int]:
         """The processes of node *number*: its worker (``daemon.pid``, which serves the
         API port), the worker's supervisor, the managed Oxigraph on its store port and
@@ -252,7 +293,9 @@ class Testnet:
             "listenPort": 0,
             "nodeRole": "edge",
             "networkConfig": self.options.network_config,
-            "announceAddresses": relay_only_announce(self.relays()),
+            "announceAddresses": (realistic_announce(self.relays()) if number == CURATOR_NUMBER
+                                  and self.options.curator_addresses == "realistic"
+                                  else relay_only_announce(self.relays())),
             "autoUpdate": {"enabled": False},
             "telemetry": {"enabled": False},
             "contextGraphs": [],
@@ -277,7 +320,7 @@ class Testnet:
                 raise TestnetError(f"port {port} for node{number} is taken")
         home.mkdir(parents=True, mode=0o700)
         os.chmod(home, 0o700)
-        config = {**self.base_config(number), **dict(overrides)}
+        config = {**self.base_config(number), **dict(overrides), **dict(self.options.node_config)}
         _write_private(home / "config.json", json.dumps(config, indent=2) + "\n")
         _write_private(home / "auth.token", "# DKG node API token - treat this like a password\n"
                        + secrets.token_urlsafe(32) + "\n")
@@ -419,6 +462,24 @@ def relay_only_announce(relays: Sequence[str]) -> list[str]:
     return [DEAD_ADDRESS, *(f"{relay.rstrip('/')}/p2p-circuit" for relay in relays)]
 
 
+def realistic_announce(relays: Sequence[str], interfaces: Optional[Sequence[str]] = None) -> list[str]:
+    """A curator's announce list as a node in a private network makes it (OriginTrail/dkg#3421):
+    loopback, this machine's own interface addresses (*interfaces*, default :func:`interface_addresses`),
+    a private range, a container bridge and a shared-range VPN address, all on the closed
+    ``DEAD_PORT`` (this machine's addresses refuse a dial at once, the others go nowhere),
+    and a circuit through every relay. The trial's other nodes run here, so the curator's
+    own interface addresses must not take a connection: that would make it directly reachable."""
+    own = [f"/ip4/{ip}/tcp/{DEAD_PORT}" for ip in (interface_addresses() if interfaces is None else interfaces)]
+    return [DEAD_ADDRESS, *own, *UNREACHABLE_ADDRESSES, *relay_only_announce(relays)[1:]]
+
+
+def interface_addresses() -> list[str]:
+    """This machine's IPv4 interface addresses, without loopback and link-local ones."""
+    found = {address.address for addresses in psutil.net_if_addrs().values() for address in addresses
+             if address.family == socket.AF_INET}
+    return sorted(ip for ip in found if not ip.startswith(("127.", "169.254.")))
+
+
 class LinkWatcher:
     """Samples ``GET /api/connections`` on the trial's nodes every *interval* seconds
     and keeps every link between two of them: who, when, relayed or direct.
@@ -504,6 +565,14 @@ def _relay_of(address: str) -> str:
     return before.rsplit("/p2p/", 1)[-1][-8:] if "/p2p/" in before else ""
 
 
+_CLOSE_LINE = re.compile(r"Connection closed: (\S+) transport=(\S+) duration=(\d+)?")
+
+
+def _median(values: Sequence[int]) -> Optional[int]:
+    ordered = sorted(values)
+    return ordered[len(ordered) // 2] if ordered else None
+
+
 def _write_private(path: Path, text: str) -> None:
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
@@ -511,10 +580,10 @@ def _write_private(path: Path, text: str) -> None:
     os.chmod(path, 0o600)
 
 
-def _port_free(port: int) -> bool:
+def _port_free(port: int, host: str = "127.0.0.1") -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
         probe.settimeout(0.5)
-        return probe.connect_ex(("127.0.0.1", port)) != 0
+        return probe.connect_ex((host, port)) != 0
 
 
 def _listener(port: int) -> int:
