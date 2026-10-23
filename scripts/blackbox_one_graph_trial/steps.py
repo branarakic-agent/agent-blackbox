@@ -984,33 +984,36 @@ def _judge_admission(name: str, evidence: dict[str, Any], read_timeout: float) -
     refused as fatal for a missing signing key, went through within ``WRITABLE_S`` of its approval, and
     every reader had it within *read_timeout*."""
     if "failed" in evidence:
-        raise StepFailed(evidence["failed"])
+        raise StepFailed(evidence["failed"], **{name: evidence})
     write, logs = evidence["write"], evidence.get("logs") or {}
     if write["fatal"] or logs.get("fatal_no_signer_key"):
         raise StepFailed(f"{name}'s write was refused as fatal: {NO_SIGNER_KEY} (the curator's member list naming "
-                         "it had not arrived)")
+                         "it had not arrived)", **{name: evidence})
     if write["written_after_s"] is None:
-        raise StepFailed(f"{name}'s first write did not go through within {WRITE_TRY_S:.0f} s of its approval")
+        raise StepFailed(f"{name}'s first write did not go through within {WRITE_TRY_S:.0f} s of its approval",
+                         **{name: evidence})
     if write["written_after_s"] > WRITABLE_S:
         raise StepFailed(f"{name}'s first write went through {write['written_after_s']:.0f} s after its approval "
-                         f"(bound {WRITABLE_S:.0f} s)")
+                         f"(bound {WRITABLE_S:.0f} s)", **{name: evidence})
     seconds = (evidence.get("arrivals") or {}).get("seconds_after_share") or {}
     missing = sorted(reader for reader, value in seconds.items() if value is None)
     if missing:
-        raise StepFailed(f"{', '.join(missing)} did not receive {name}'s first write within {read_timeout:.0f} s")
+        raise StepFailed(f"{', '.join(missing)} did not receive {name}'s first write within {read_timeout:.0f} s",
+                         **{name: evidence})
     return evidence
 
 
 def _judge_curator_write(evidence: dict[str, Any], read_timeout: float) -> dict[str, Any]:
     """The curator's own write went through and every member it was timed on had it within *read_timeout*."""
     if "failed" in evidence:
-        raise StepFailed(evidence["failed"])
+        raise StepFailed(evidence["failed"], curator_write=evidence)
     if evidence.get("written_after_s") is None:
-        raise StepFailed(f"the curator's write did not go through in {WRITE_TRY_S:.0f} s")
+        raise StepFailed(f"the curator's write did not go through in {WRITE_TRY_S:.0f} s", curator_write=evidence)
     seconds = (evidence.get("arrivals") or {}).get("seconds_after_share") or {}
     missing = sorted(reader for reader, value in seconds.items() if value is None)
     if missing:
-        raise StepFailed(f"{', '.join(missing)} did not receive the curator's write within {read_timeout:.0f} s")
+        raise StepFailed(f"{', '.join(missing)} did not receive the curator's write within {read_timeout:.0f} s",
+                         curator_write=evidence)
     return evidence
 
 
