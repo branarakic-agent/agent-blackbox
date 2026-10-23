@@ -366,3 +366,13 @@ def test_a_members_first_share_waits_for_its_own_approval_line(tmp_path):
     refused = _FakeApi([DkgError("403: CONTEXT_GRAPH_NOT_WRITABLE")])
     assert _create_asset(refused, graph, "a", []) == {"ok": False, "stage": "create",
                                                       "error": "403: CONTEXT_GRAPH_NOT_WRITABLE", "fatal": False}
+
+
+def test_a_native_curator_has_no_announce_list_and_reporters_stay_relay_only(tmp_path):
+    nodes = _testnet(tmp_path, curator_addresses="native")
+
+    nodes._create(1, overrides={}, wallets=False)
+    nodes._create(2, overrides={}, wallets=False)
+
+    assert "announceAddresses" not in nodes.config(1)
+    assert nodes.config(2)["announceAddresses"] == testnet.relay_only_announce(RELAYS)

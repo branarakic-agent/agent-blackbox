@@ -139,11 +139,14 @@ class Cluster:
         if self.links is not None:
             self.links.start()
         relays = self.devnet.relays()
-        realistic = bool(self.options.testnet and self.options.testnet.curator_addresses == "realistic")
-        announce = ("the curator: loopback, this machine's own interface addresses, unreachable 10.x, 172.17.0.1 and "
-                    "100.64.x addresses (all on a closed port) + a circuit through each relay (OriginTrail/dkg#3421); "
-                    "reporters: dead loopback address + a circuit through each relay" if realistic else
-                    "dead loopback address + a circuit through each relay (no direct address)")
+        mode = self.options.testnet.curator_addresses if self.options.testnet else "dead-loopback"
+        announce = {"realistic": "the curator: loopback, this machine's own interface addresses, unreachable 10.x, "
+                                 "172.17.0.1 and 100.64.x addresses (all on a closed port) + a circuit through each "
+                                 "relay (OriginTrail/dkg#3421); reporters: dead loopback address + a circuit through "
+                                 "each relay",
+                    "native": "the curator: no announce list (what the node announces itself, see relay_status); "
+                              "reporters: dead loopback address + a circuit through each relay"}.get(
+            mode, "dead loopback address + a circuit through each relay (no direct address)")
         curator_announce = [_address_kind(address) if "/p2p-circuit" not in address else "circuit"
                             for address in self.devnet.config(CURATOR_NUMBER).get("announceAddresses") or []]
         return {"nodes": len(self.devnet.numbers()), "network_id": str(status.get("networkId") or ""),

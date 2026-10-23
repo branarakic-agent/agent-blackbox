@@ -66,11 +66,12 @@ def _parser() -> argparse.ArgumentParser:
                      help="run every step even when a step it needs did not pass (default: SKIP it)")
     run.add_argument("--cosigner-reporter", default="reporter-b", choices=("reporter-a", "reporter-b"),
                      help="testnet: the reporter whose node curator 1 works through (default reporter-b)")
-    run.add_argument("--curator-addresses", choices=("dead-loopback", "realistic"), default="dead-loopback",
+    run.add_argument("--curator-addresses", choices=("dead-loopback", "realistic", "native"), default="dead-loopback",
                      help="testnet: what the curator node announces besides its circuits: a dead loopback address "
                           "(default), or what a node in a private network lists (its loopback, this machine's "
                           "interface addresses, unreachable 10.x, 172.17.0.1 and 100.64.x addresses, all on a closed "
-                          "port; OriginTrail/dkg#3421)")
+                          "port; OriginTrail/dkg#3421), or native: no announce list (the node's own choice; it is "
+                          "relay-only only on a build that filters its private addresses out)")
     run.add_argument("--member-admission", action="store_true",
                      help="admit the reporters as an application with a member list does (request-join, the "
                           "curator's approve-join) and time each one's first write from its approval "

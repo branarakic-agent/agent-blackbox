@@ -65,8 +65,9 @@ DEAD_ADDRESS = f"/ip4/127.0.0.1/tcp/{DEAD_PORT}"
 #: a private range, a container bridge, a VPN address in the shared range (100.64/10).
 UNREACHABLE_ADDRESSES = (f"/ip4/10.254.13.37/tcp/{DEAD_PORT}", f"/ip4/172.17.0.1/tcp/{DEAD_PORT}",
                          f"/ip4/100.64.13.37/tcp/{DEAD_PORT}")
-#: ``--curator-addresses``: what the curator node announces besides its circuits.
-CURATOR_ADDRESSES = ("dead-loopback", "realistic")
+#: ``--curator-addresses``: what the curator node announces besides its circuits ("native": no announce list,
+#: the node's own choice; on a build that announces only public and relay addresses that is its circuits).
+CURATOR_ADDRESSES = ("dead-loopback", "realistic", "native")
 #: How the trial's machine lock starts (what tells a later run the lock is the trial's own).
 _LOCK_TEXT = "blackbox one-graph trial on the testnet"
 
@@ -285,8 +286,9 @@ class Testnet:
     # -- creating and starting --------------------------------------------------------
 
     def base_config(self, number: int) -> dict[str, Any]:
-        """What makes node *number* a relay-only Edge of the testnet, on this machine's ports."""
-        return {
+        """What makes node *number* a relay-only Edge of the testnet, on this machine's ports (with
+        ``--curator-addresses native`` the curator has no announce list: what it announces is its own)."""
+        config = {
             "name": f"bb-trial-node{number}",
             "apiPort": self.api_port(number),
             "apiHost": "127.0.0.1",
@@ -302,6 +304,9 @@ class Testnet:
             "store": {"backend": "oxigraph-server", "options": {"port": self.store_port(number)}},
             "auth": {"enabled": True},
         }
+        if number == CURATOR_NUMBER and self.options.curator_addresses == "native":
+            del config["announceAddresses"]
+        return config
 
     def relays(self) -> list[str]:
         """The relays of the bundled network file (the Cores every Edge of it reserves on)."""
