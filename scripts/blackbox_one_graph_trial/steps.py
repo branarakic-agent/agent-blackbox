@@ -28,7 +28,7 @@ from plugins.blackbox.kernel.dkg_client import DkgError, _is_already_finalized, 
 
 from .actors import Actor, ActorError
 from .cluster import Cluster
-from .devnet import NodeApi, _line_time
+from .devnet import DevnetError, NodeApi, _line_time
 from .report import ERROR, FAIL, PASS, SKIP, StepFailed, StepResult, TrialReport
 
 logger = logging.getLogger(__name__)
@@ -586,6 +586,8 @@ class Trial:
                 admitted[name] = evidence = self._admit(name)
             except StepFailed as failed:   # never approved, so nothing was written
                 admitted[name] = evidence = {"failed": failed.summary, **failed.evidence}
+            except (DkgError, DevnetError) as exc:   # a node refused a call of the join itself
+                admitted[name] = evidence = {"failed": f"{name}'s join: {type(exc).__name__}: {str(exc)[:400]}"}
             write = evidence.get("write") or {}
             if write.get("written_after_s") is not None:
                 watchers[name] = ArrivalWatcher({reader: self.cluster.api_of(reader) for reader in readers},
@@ -644,7 +646,11 @@ class Trial:
             tried = _write_once(api, self.state.graph_id, asset, quads)
             tried["at_s"] = round(time.time() - approved_at, 1)
             tries.append(tried)
-            if involved_after is None and (self.cluster.graph_row(name) or {}).get("callerInvolved"):
+            try:
+                involved = (self.cluster.graph_row(name) or {}).get("callerInvolved")
+            except DkgError:   # a listing that did not answer this time; the next try reads it again
+                involved = False
+            if involved_after is None and involved:
                 involved_after = round(time.time() - approved_at, 1)
             if tried["ok"]:
                 written_after = round(time.time() - approved_at, 1)
