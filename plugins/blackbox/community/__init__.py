@@ -1,5 +1,9 @@
-"""Community — the shared community threat graph.
+"""Community — what every protected agent shares and learns from.
 
+Since 2026-10-16 the community lives in the verified graph itself: every node
+shares its signed reports into that graph's shared memory (sub-graph
+``kernel.constants.COMMUNITY_SUB_GRAPH``), and the curators promote what they
+confirm into its Verified Memory. There is no second graph.
 Every protected agent can report what it sees; every other agent reads it.
 Community findings only ever FLAG — they never block — and community strings
 are untrusted data that is clamped, typed and displayed, never interpreted.
@@ -16,9 +20,11 @@ Public surface:
   :func:`spawn_community_share` sends an allowed finding. This node's
   reporting identity is resolved by ``kernel.identity.reporter_address``.
 * :func:`add_report_parser` + :func:`cmd_report` (``blackbox report``), :func:`print_community_status`
-  (the status block), :func:`ensure_community_subscription` (join on sync),
-  :func:`read_join_state` + :class:`JoinState` / ``JOIN_STATE_TEXT`` (is this node
-  connected to the community graph yet — the dashboard's community tile).
+  (the status block), :func:`ensure_community_subscription` (the verified graph's
+  subscription with the shared memory the community lives in),
+  :func:`read_membership_status` → :class:`MembershipStatus` (:class:`JoinState` /
+  ``JOIN_STATE_TEXT``: is this node connected to that graph yet; :class:`Admission` /
+  ``ADMISSION_TEXT``: has the graph's owner approved it — the dashboard's community tile).
 * :func:`build_report_quads` / :func:`build_false_positive_quads` /
   :func:`build_retraction_quads` — the
   privacy-safe statements a report or dispute shares (write side).
@@ -64,7 +70,9 @@ from __future__ import annotations
 
 from .report_builder import build_false_positive_quads, build_report_quads, build_retraction_quads
 from .sighting import injection_host_identifier, sighting_fields
-from .membership import JOIN_STATE_TEXT, JoinState, ensure_community_subscription, ensure_report_lane, read_join_state
+from .membership import (ADMISSION_TEXT, JOIN_STATE_TEXT, Admission, JoinState, MembershipStatus,
+                         ensure_community_subscription, ensure_report_lane, read_join_state,
+                         read_membership_status)
 from .report_cli import add_report_parser, cmd_report, print_community_status
 from .sharing import ALREADY_SEALED_REPLY, NEVER_SHARED_SOURCES, CommunitySharePolicy, spawn_community_share
 from .graph_stats import community_agents, contributing_agent_count, most_reported_threats, reports_signed_by
@@ -101,7 +109,7 @@ from .trust import status_lines as trust_status_lines
 from .trust import trust_panel
 from .trust.manifest_history import manifest_on_day, verified_manifest_history
 from ..kernel.sparql_text import page_rows
-from ..kernel.signing.trust_anchors import trusted_roots as curator_trusted_roots
+from ..kernel.signing import trusted_roots as curator_trusted_roots
 from .statements.curator_view import today_utc as curator_today
 
 
@@ -111,6 +119,7 @@ def first_seen_trail():
 
 
 __all__ = [
+    "ADMISSION_TEXT",
     "ALREADY_SEALED_REPLY",
     "COMMUNITY_LISTING_MAX_DAYS",
     "COMMUNITY_PAUSE_SUBJECT",
@@ -120,6 +129,7 @@ __all__ = [
     "PULSE",
     "VERIFIED_GRAPH_KINDS",
     "ActiveGraph",
+    "Admission",
     "Clusters",
     "CommunityRead",
     "CommunityRule",
@@ -127,6 +137,7 @@ __all__ = [
     "CuratorView",
     "Enforcement",
     "JoinState",
+    "MembershipStatus",
     "ReadState",
     "ReportVerifier",
     "Stage",
@@ -170,6 +181,7 @@ __all__ = [
     "publish_due_digests",
     "read_curator_view",
     "read_join_state",
+    "read_membership_status",
     "read_verified_reports",
     "record_verified_sighting",
     "reports_signed_by",

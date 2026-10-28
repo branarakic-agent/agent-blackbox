@@ -20,6 +20,9 @@ and ``signing.sign(...)`` / ``signing.verify(...)``:
   (root epoch -> root keys per network; the sandbox override when unpinned).
 * :mod:`.statement_order` — curator statement types and which statement about
   a threat is current (per-threat sequence; terminal statements dominate).
+* :mod:`.promotion_statement` — the promotion statement: the verified authority's
+  two-key pointer (report subject + digest) to ONE community report it
+  promoted to Verified Memory; imported as ``signing.promotion_statement``.
 """
 
 from .envelope import (
@@ -39,32 +42,46 @@ from .envelope import (
     verify,
 )
 
-from . import authority, graph_migration, key_manifest, statement_order, trust_anchors
-from .graph_migration import MigrationVerdict
-from .key_manifest import ManifestVerdict
-from .trust_anchors import RootPins
+from . import authority, graph_migration, key_manifest, promotion_statement, statement_order, trust_anchors
+from .authority import COMMUNITY_GRAPH, VERIFIED_GRAPH, Authority, RootStatement, allowed_kinds, home_graph
+from .graph_migration import GraphMigration, MigrationVerdict
+from .key_manifest import KEY_MANIFEST_STATEMENT, KeyManifest, ManifestVerdict
+from .statement_order import CuratorStatement
+from .trust_anchors import RootPins, trusted_roots
 
 __all__ = [
+    "COMMUNITY_GRAPH",
     "ENVELOPE_VERSION",
+    "KEY_MANIFEST_STATEMENT",
     "MAX_ENVELOPE_CHARS",
     "MAX_SIGNATURES",
+    "VERIFIED_GRAPH",
+    "Authority",
+    "CuratorStatement",
+    "GraphMigration",
+    "KeyManifest",
     "ManifestVerdict",
     "MigrationVerdict",
     "RootPins",
+    "RootStatement",
     "Signature",
     "SignedEnvelope",
+    "allowed_kinds",
     "authority",
     "canonical_text",
     "content_id",
     "cosign",
     "from_text",
     "graph_migration",
+    "home_graph",
     "is_canonical",
     "key_manifest",
+    "promotion_statement",
     "public_key_hex",
     "sign",
     "statement_order",
     "trust_anchors",
+    "trusted_roots",
     "verified_signers",
     "verify",
 ]

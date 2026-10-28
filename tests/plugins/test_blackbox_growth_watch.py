@@ -152,3 +152,41 @@ def test_request_refresh_now_makes_the_cached_generation_due_on_disk_and_in_memo
 
     assert refresh_cycle.peek(_Config()).refresh_due(3600) <= time.time()
     assert disk_cache._read_cache().refresh_due(3600) <= time.time()
+
+
+def test_a_sync_that_fell_due_while_the_machine_slept_starts_right_after_wake():
+    """A sleeping Mac freezes the worker mid-wait; on wake the wall clock is hours on.
+    The wait must end at the next tick, not resume its countdown (Mac, 2026-10-18)."""
+    now = [1_000.0]
+    ticks: list[int] = []
+
+    def clock() -> float:
+        return now[0]
+
+    def wake() -> bool:
+        ticks.append(1)
+        if len(ticks) == 2:
+            now[0] += 4 * 3600.0   # the lid closes here and opens four hours later
+        return False
+
+    # A tick budget far below the hour: code that resumed the countdown is stopped here
+    # (returns True) instead of hanging the suite for an hour.
+    stopped = sync_timing.wait_or_wake(3600.0, lambda: len(ticks) > 50, wake, tick_s=0.001, clock=clock)
+
+    assert stopped is False   # the wait ended because the sync is due, not because it was stopped
+    assert len(ticks) == 2
+
+
+def test_a_clock_set_backwards_never_stretches_the_wait():
+    now = [1_000.0]
+
+    def clock() -> float:
+        now[0] -= 3600.0   # every reading an hour earlier than the last
+        return now[0]
+
+    started = time.monotonic()
+    stopped = sync_timing.wait_or_wake(0.05, lambda: False, lambda: False, tick_s=0.001, clock=clock)
+
+    assert stopped is False
+    assert time.monotonic() - started < 5.0
+

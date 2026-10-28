@@ -242,3 +242,9 @@ fd9498122e5135106ce388f8106a5912a6f76a2c:tests/agent/test_mid_turn_compaction_tu
 40ee5fbe50e55709a6ed5e9e171216c56802e197:tests/plugins/test_blackbox_kernel_redaction.py:generic-api-key:87
 40ee5fbe50e55709a6ed5e9e171216c56802e197:tests/plugins/test_blackbox_kernel_redaction.py:generic-api-key:88
 40ee5fbe50e55709a6ed5e9e171216c56802e197:tests/plugins/test_blackbox_kernel_redaction.py:generic-api-key:89
+# 2026-10-21 reviewed false positives in Hermes v0.22.2's own commits (authors Teknium, alt-glitch),
+# brought in by the Hermes 0.22.2 merge: placeholder values in Hermes tests and docs, not secrets.
+4a23324a395405d7c05ada88aa20d280c2288929:tests/agent/test_setup_beat_card_round.py:generic-api-key:68
+2e7fb2cde5171ac6e72ae1551632bf658c5a3502:tests/gateway/test_local_session_info_fields.py:generic-api-key:23
+cdf5732af67c9c1784ba4857191c499c3f3b741e:hermes_cli/left_core_migration.py:generic-api-key:191
+3551045907580e25a766d01bc56eb0ee41115d0d:docs/gateway-classic-cli.md:generic-api-key:36

@@ -180,8 +180,10 @@ function javaOptsFromInspect(stdout) {
     const containers = JSON.parse(stdout);
     const env = containers?.[0]?.Config?.Env;
     if (!Array.isArray(env)) return '';
-    const entry = env.find((value) => String(value).startsWith('JAVA_OPTS='));
-    return entry ? String(entry).slice('JAVA_OPTS='.length) : '';
+    // The pinned Islandora image's setenv.sh replaces JAVA_OPTS with this value.
+    // A legacy JAVA_OPTS entry does not establish the heap used by its JVM.
+    const entry = env.find((value) => String(value).startsWith('TOMCAT_JAVA_OPTS='));
+    return entry ? String(entry).slice('TOMCAT_JAVA_OPTS='.length) : '';
   } catch {
     return '';
   }
@@ -201,14 +203,14 @@ async function blazegraphCpus() {
 function blackboxDockerRunner(log) {
   return {
     async run(args, opts) {
-      if (args[0] === 'run' && !args.some((arg) => String(arg).startsWith('JAVA_OPTS='))) {
+      if (args[0] === 'run' && !args.some((arg) => String(arg).startsWith('TOMCAT_JAVA_OPTS='))) {
         return runDocker(
           [
             'run',
             '--cpus',
             await blazegraphCpus(),
             '-e',
-            `JAVA_OPTS=${BLACKBOX_BLAZEGRAPH_JAVA_OPTS}`,
+            `TOMCAT_JAVA_OPTS=${BLACKBOX_BLAZEGRAPH_JAVA_OPTS}`,
             ...args.slice(1),
           ],
           opts,

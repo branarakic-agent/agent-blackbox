@@ -22,7 +22,7 @@ import time
 from typing import TYPE_CHECKING, Any, Optional, Sequence
 
 from .. import keys
-from ..consent import CODE_CHARS
+from ..proposals import CODE_CHARS
 from ..context import build_context
 from ..publishing import VerbError
 from ...kernel import display_safety

@@ -20,7 +20,7 @@ from plugins.blackbox.community.reputation import sealed_index
 from plugins.blackbox.community import stages
 from plugins.blackbox.community.statements import curator_view as cv
 from plugins.blackbox.curate import verbs
-from plugins.blackbox.curate.proposal import ProposalStore
+from plugins.blackbox.curate.proposals.proposal import ProposalStore
 from plugins.blackbox.kernel.signing.statement_order import CuratorStatement as Kind
 from test_blackbox_curate import FakeNode, _ctx, _machine, curators
 

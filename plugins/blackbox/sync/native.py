@@ -8,7 +8,8 @@ against the chain. With the exact-batch stream and recovery prefetch switched on
 at "waiting-for-dkg-capacity" for an hour on the same release (KI-282).
 
 So for the default graph, ``blackbox sync`` no longer drives the transfer. It
-**observes** it (an Observer, in pattern terms): subscribe once, then compile
+**observes** it (an Observer, in pattern terms): subscribe once (never again on each
+run, KI-449), then compile
 the rules the node already holds, until the first usable verified rules exist.
 The node keeps fetching after this command returns; the ordinary hourly refresh
 and the dashboard's refresh worker compile the rest as it lands.
@@ -28,10 +29,10 @@ from __future__ import annotations
 import argparse
 import logging
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable
 
-from .. import ruleset
+from .. import community, ruleset
 from ..kernel import constants
 from ..kernel.config import BlackboxConfig, load_blackbox_config
 from ..kernel.dkg_client import DkgClient, DkgError
@@ -64,13 +65,16 @@ def route(cfg: BlackboxConfig, older_route: SyncRoute) -> SyncRoute:
     """The sync to run for *cfg*: :func:`sync` for the default graph (KI-282),
     otherwise *older_route* (the durable catch-up, unchanged). Every caller of
     ``blackbox sync`` goes through this one decision."""
+    if cfg.snapshot_sync is not None:
+        from .core_snapshot import sync as snapshot_sync
+        return snapshot_sync
     return sync if handles(cfg) else older_route
 
 
 def sync(args: argparse.Namespace) -> int:
     """``blackbox sync`` for the default graph: observe the node's own recovery."""
     cfg = load_blackbox_config()
-    return run(DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home), cfg, args)
+    return run(DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home, config=cfg), cfg, args)
 
 
 @dataclass
@@ -81,6 +85,7 @@ class _Observation:
     gave_up: bool = False   # the node refused the subscription for good
     error: str = ""
     verified_rules: int = 0
+    readiness_cursor: dict = field(default_factory=lambda: {"offset": 0})
 
     def record(self, status: str, phase: str, cfg: BlackboxConfig) -> None:
         """Publish progress for the dashboard and ``blackbox status``.
@@ -94,6 +99,7 @@ class _Observation:
             graph_peer_id=cfg.graph_peer_id,
             phase=phase,
             public_entries=self.verified_rules,
+            count_kind="sampled-usable-rules" if getattr(cfg, 'detection_backend', 'legacy-cache') == "dkg" else "compiled-rules",
             community_entries=0,
             detection_ready=self.verified_rules > 0,
             graph_complete=False,
@@ -115,10 +121,23 @@ def _refused_for_good(exc: DkgError) -> bool:
 
 
 def _subscribe(client: DkgClient, cfg: BlackboxConfig, seen: _Observation) -> None:
-    """Subscribe the node to the verified graph once; a refusal the node will
-    not change its mind about ends the observation."""
+    """Subscribe the node to the verified graph once; a refusal the node will not change
+    its mind about ends the observation. Membership adds the graph's shared memory (the
+    community) in the same breath, once (``community/membership``).
+
+    KI-449: every subscribe that includes shared memory makes DKG 10.0.25 restart its
+    shared-memory catch-up, and Blackbox used to subscribe on EVERY sync run, so a fresh
+    node's download kept being pushed back. This subscribes only when the node lists the
+    graph as NOT subscribed; a listing that cannot be read requests nothing (LES-011)."""
+    state = community.read_join_state(client, cfg.context_graph_id)
+    if state is community.JoinState.UNKNOWN:
+        seen.error = "the DKG node's listing could not be read; asking again shortly"
+        return
+    if state is not community.JoinState.JOINING:   # already subscribed: nothing to request
+        seen.subscribed = True
+        return
     try:
-        reply = client.subscribe_context_graph(cfg.context_graph_id)
+        reply = client.subscribe_context_graph(cfg.context_graph_id, include_shared_memory=False)
     except DkgError as exc:
         seen.gave_up = _refused_for_good(exc)
         seen.error = f"DKG subscription unavailable: {exc}"
@@ -132,6 +151,11 @@ def _subscribe(client: DkgClient, cfg: BlackboxConfig, seen: _Observation) -> No
 def _compile_what_the_node_holds(client: DkgClient, cfg: BlackboxConfig, seen: _Observation) -> None:
     """Compile the verified rules the node already holds into the ruleset."""
     try:
+        if getattr(cfg, 'detection_backend', 'legacy-cache') == "dkg":
+            from ..ruleset import ready_sample
+            seen.verified_rules = ready_sample(cfg, cursor=seen.readiness_cursor)
+            seen.error = ""
+            return
         compiled = ruleset.refresh(cfg, client, wait_for_lock=False)
     except ruleset.RulesetRefreshLockUnavailable:
         seen.error = "another process is compiling the rules; waiting for it"
@@ -171,7 +195,7 @@ def run(client: DkgClient, cfg: BlackboxConfig, args: argparse.Namespace) -> int
             if seen.verified_rules > 0:
                 seen.record("partial", "verified-rules-available", cfg)
                 print(
-                    f"Loaded {seen.verified_rules:,} verified detection rules. The node keeps "
+                    f"{'Validated a sample of' if getattr(cfg, 'detection_backend', 'legacy-cache') == 'dkg' else 'Loaded'} {seen.verified_rules:,} verified detection rules. The node keeps "
                     "fetching the rest of the graph in the background; `blackbox status` shows "
                     "the count as it grows."
                 )

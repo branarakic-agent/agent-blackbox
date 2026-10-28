@@ -146,7 +146,8 @@ def _claim_receipt(path: Path) -> Path | None:
 
 
 def _stale(receipt: dict) -> bool:
-    """Older than a week on the store's clock, the clock that also decides the consent day."""
+    # The store's clock, the same one that picks the consented day: a second clock let a receipt
+    # the day logic still considered fresh expire on wall time.
     from .shared_metrics import _utc_now
 
     return _utc_now().timestamp() - receipt["finished_at"] > MAX_RECEIPT_AGE_SECONDS

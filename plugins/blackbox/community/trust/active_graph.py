@@ -31,7 +31,7 @@ from ...kernel import constants
 from ...kernel.config import BlackboxConfig
 from ...kernel.dkg_client import DkgClient
 from ...kernel.signing import trust_anchors
-from ...kernel.signing.graph_migration import GraphMigration
+from ...kernel.signing import GraphMigration
 from ...kernel.sparql_text import page_rows
 from ..report_signer import network_environment
 from ..statements import curator_view

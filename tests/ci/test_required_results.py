@@ -36,10 +36,10 @@ def test_status_policy(job, result, ordinary, excluded, release):
 
 
 @pytest.mark.parametrize("lane,jobs", [
-    ("python", ("tests", "tests-os")),
+    # tests / tests-os run only on dispatch or release: python and
+    # desktop_updater no longer make them required consumers.
     ("e2e", ("tests", "tests-os")),
     ("e2e_upgrade", ("tests", "tests-os")),
-    ("desktop_updater", ("tests-os",)),
     ("e2e_desktop_update", ("e2e-desktop-update",)),
     ("remote_backends", ("remote-backends",)),
 ])

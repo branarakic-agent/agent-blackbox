@@ -31,7 +31,7 @@ from typing import Any, Dict, List, Set, Tuple
 from ..kernel.browser_boundary import BrowserBoundary
 from .. import shields
 from ..sync import read_durable_progress, state as sync_state
-from . import community_routes, docs_routes, graph_pages, lifecycle, shields_routes, sync_meter, sync_timing
+from . import community_routes, direct_reads, docs_routes, graph_pages, lifecycle, playground_routes, shields_routes, sync_meter, sync_timing
 from .graph_pages import _balanced_graph_entries, _graph_entries
 from .network_sync import network_sync_argv as _network_sync_argv
 from .node_probe import NodeLiveness, NodeReadCache, RepeatGate, node_sync_probe
@@ -75,7 +75,7 @@ _FONT_FILES = frozenset({
     "ibm-plex-mono-600-latin.woff2", "ibm-plex-mono-600-latin-ext.woff2",
 })
 #: The sub-packages that add their own routes and pages, each through ``register(app, swr)``.
-_ROUTE_PACKAGES = (shields_routes, docs_routes)
+_ROUTE_PACKAGES = (shields_routes, docs_routes, playground_routes)
 def _dkg_durable_progress(dkg_home: str, context_graph_id: str) -> dict[str, Any]:
     """Read the latest resumable VM offset reported by the managed DKG."""
     return read_durable_progress(dkg_home, context_graph_id)
@@ -338,6 +338,8 @@ def _sync_activity(
     connection: dict[str, Any],
     transfer: dict[str, Any],
 ) -> dict[str, Any]:
+    if node_reachable and sync_timing.catchup_supersedes_failure(catchup, transfer):
+        transfer = {}  # Preserve the historical record; omit only its superseded UI error.
     catchup_status = str(catchup.get("status") or "").lower()
     connection_state = str(connection.get("state") or "").lower()
     transfer_status = str(transfer.get("status") or "").lower()
@@ -463,10 +465,8 @@ def _sync_activity(
     )
 
     # The source-pinned transfer is the authoritative result for this graph.
-    # A generic catch-up job may still retain an older failure after that
-    # transfer completed successfully; do not turn verified local data into a
-    # false dashboard error. A genuinely new queued/running job remains
-    # visible below.
+    # Ignore an older generic-job failure after successful verified transfer.
+    # A new queued/running job remains visible below.
     if transfer_status == "done" and catchup_status not in {"queued", "running"}:
         progress.update(
             status="ready",
@@ -798,7 +798,7 @@ def create_app(*, manage_blackbox: bool = False):
     from ..sync import state as sync_state
     from ..kernel import constants
     from ..kernel.config import load_blackbox_config
-    from ..kernel.dkg_client import DkgClient, extract_binding
+    from ..kernel.dkg_client import DkgClient, DkgError, extract_binding
 
     app = FastAPI(title="Agent Blackbox", docs_url=None, redoc_url=None)
 
@@ -1103,7 +1103,7 @@ def create_app(*, manage_blackbox: bool = False):
     # Node liveness: cached, debounced, and its outages logged (KI-335). The
     # 5 s check timeout stays generous — /api/status can take a couple of
     # seconds under load, and the debounce absorbs one check that still misses.
-    _liveness = NodeLiveness(lambda cfg, timeout: DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home).reachable(timeout=timeout),
+    _liveness = NodeLiveness(lambda cfg, timeout: DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home, config=cfg).reachable(timeout=timeout),
                              ttl=15.0, timeout=5.0)
     _node_reachable = _liveness.reachable
     _node_read_log = RepeatGate()
@@ -1115,10 +1115,10 @@ def create_app(*, manage_blackbox: bool = False):
         CommunityRead (reports counted by signer; disputes, curator view, budget — R2), or
         None before the first lands; stale-while-revalidate, so it never blocks a request."""
         def _load() -> Any:
-            if not getattr(cfg, "community_graph_id", "") or not _node_reachable(cfg):
+            if not getattr(cfg, "context_graph_id", "") or not _node_reachable(cfg):
                 return None   # keep the cached value; retry next poll
             try:
-                read = community.read_verified_reports(DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home), cfg)
+                read = community.read_verified_reports(DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home, config=cfg), cfg)
                 return read if read.available else None  # unavailable: keep cached
             except Exception as exc:  # pragma: no cover - fail open
                 logger.debug("blackbox dashboard: community read failed: %s", exc)
@@ -1284,13 +1284,10 @@ def create_app(*, manage_blackbox: bool = False):
     @app.get("/api/graph-status")
     def graph_status() -> Any:
         cfg = load_blackbox_config()
-        rs = ruleset.peek(cfg)
-        counts = rs.counts()
-        # Community + sightings come from the synced ruleset cache, NOT the
-        # shared-working-memory view, which does O(slice) trust work and times
-        # out (HTTP 500) on a large pool. Public uses the cache too: current VM
-        # rows are complete threats, and ruleset.refresh also promotes any
-        # still-unmigrated legacy proof rows.
+        result = direct_reads.status(cfg)
+        if isinstance(result, JSONResponse):
+            return result
+        rs, counts = result
         public = _graph_source_count(rs, "public")
         community = len(getattr(rs, "community", {}) or {})
 
@@ -1388,7 +1385,7 @@ def create_app(*, manage_blackbox: bool = False):
             "dkg_bin": cfg.dkg_bin,
             "node_reachable": g["node_reachable"],
             "sync_interval": cfg.sync_interval,
-            "last_sync": rs.synced_at or None,
+            **direct_reads.metadata(cfg, rs),
             # moves on a pulse (not a VM sync): the page reloads the Community tab on it (FIX-0038)
             "community_version": getattr(rs, "community_fingerprint", "") or None,
             "ruleset": counts,
@@ -1442,7 +1439,7 @@ def create_app(*, manage_blackbox: bool = False):
             if not _node_reachable(cfg):
                 return None   # retry next poll; don't cache a "down" as empty
             try:
-                ident = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home).agent_identity() or {}
+                ident = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home, config=cfg).agent_identity() or {}
                 return str(ident.get("agentAddress") or ident.get("agentDid") or "")
             except Exception as exc:  # pragma: no cover - fail open
                 logger.debug("blackbox dashboard: agent identity failed: %s", exc)
@@ -1711,7 +1708,7 @@ def create_app(*, manage_blackbox: bool = False):
         """Map a UI tier name to a DKG SPARQL view.
 
         ``public`` → verifiable-memory (the curated source of truth),
-        ``community`` → shared-working-memory (the community graph; flag-only),
+        ``community`` → shared-working-memory (the community's reports; flag-only),
         ``local`` → working-memory (this node's own private graph).
         """
         tier = (tier or default).lower()
@@ -1737,8 +1734,8 @@ def create_app(*, manage_blackbox: bool = False):
         tier, _view = _tier_view(tier)
         cfg = load_blackbox_config()
 
-        # The ruleset merges complete public VM threats with community SWM rows
-        # and retains a compatibility join for any legacy CurationProof assets.
+        if direct_reads.handles(cfg, tier):
+            return direct_reads.page(cfg, limit=limit, offset=offset, q=q, category=category, ecosystem=ecosystem)
         if tier in {"public", "community"}:
             rs = ruleset.peek(cfg)
             # One shaping function: category from the identifier, community
@@ -1777,7 +1774,7 @@ def create_app(*, manage_blackbox: bool = False):
                 return None   # keep the default (empty) cached briefly; retry next poll
             seen: dict[str, dict[str, Any]] = {}
             try:
-                client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
+                client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home, config=cfg)
                 agent_address = str(client.agent_identity().get("agentAddress") or "")
                 # This machine's private audit records live in its OWN graph (audit.local_graph).
                 local_graph = audit.local_audit_graph(client) or cfg.context_graph_id
@@ -1804,28 +1801,13 @@ def create_app(*, manage_blackbox: bool = False):
         routes.register(app, _swr)
     @app.get("/api/threat")
     def threat(identifier: str = Query(..., min_length=1), tier: str = Query("public")) -> Any:
-        """Full detail for ONE threat via a targeted point-lookup.
-
-        ``tier`` ∈ public | community | local. Fail-open."""
+        """Targeted threat detail in the requested tier; unavailable reads are explicit."""
         tier, view = _tier_view(tier, default="public")
         cfg = load_blackbox_config()
+        if direct_reads.handles(cfg, tier):
+            return direct_reads.lookup(cfg, identifier, tier)
         if tier == "community":
-            # Serve straight from the aggregated community store (sanitized).
-            rs = ruleset.peek(cfg)
-            rule = (getattr(rs, "community", {}) or {}).get(identifier)
-            if not rule:
-                return {"identifier": safe_identifier(identifier), "tier": "community", "found": False}
-            detail = {
-                safe_text(k, 64): (safe_text(v) if isinstance(v, str) else v)
-                for k, v in rule.items()
-            }
-            detail.update({
-                "identifier": safe_identifier(identifier),
-                "tier": "community",
-                "found": True,
-                "reporters": int(rule.get("reporterCount") or 0), **graph_pages.verified_profile(rs, identifier),
-            })
-            return detail
+            return graph_pages.community_threat(ruleset.peek(cfg), identifier)
         prefix = identifier.split(":", 1)[0].lower() if ":" in identifier else ""
         category = prefix if prefix in ("dep", "injection", "escalation", "fileaccess", "skill", "ioc") else "other"
         if category == "dep":
@@ -1855,7 +1837,7 @@ def create_app(*, manage_blackbox: bool = False):
         try:
             # Skip the point-lookup on an unreachable node so opening a threat
             # can't hang on a dead node.
-            client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home) if _node_reachable(cfg) else None
+            client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home, config=cfg) if _node_reachable(cfg) else None
             if client is None:
                 rows = []
             else:

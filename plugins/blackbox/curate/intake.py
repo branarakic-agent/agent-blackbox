@@ -61,6 +61,7 @@ from .queue import DeltaView, QueueItem
 from .service.disputes import DisputeRecord, DisputeStore
 from .sources import TokenBucket
 from .watch import IntakeEvent, IntakeSink, MetricsRecord, dead_man_beat
+from ..kernel.bounded_files import atomic_write
 
 logger = logging.getLogger(__name__)
 
@@ -128,9 +129,7 @@ def _load_seen(path: Path) -> set[str]:
 def _save_seen(path: Path, seen: set[str]) -> None:
     kept = sorted(seen)[-_MAX_SEEN:]
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}")
-    tmp.write_text(json.dumps(kept), encoding="utf-8")
-    os.replace(tmp, path)
+    atomic_write(path, json.dumps(kept))
 
 
 class IntakeWatcher:

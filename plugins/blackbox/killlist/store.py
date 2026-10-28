@@ -17,15 +17,14 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import secrets
 import threading
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from ..kernel import constants
 from .gates import Decision
 from .statement import KillEntry, KillList
+from ..kernel.bounded_files import atomic_write
 
 logger = logging.getLogger(__name__)
 _STORE_FILE = "kill_list.json"
@@ -61,9 +60,7 @@ class LastGoodStore:
     def _save(self, kill_list: KillList) -> None:
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self._path.with_name(f"{self._path.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}")
-            tmp.write_text(json.dumps({"version": kill_list.version, "day": kill_list.day,
-                                       "entries": [e.as_json() for e in kill_list.entries]}), encoding="utf-8")
-            os.replace(tmp, self._path)
+            atomic_write(self._path, json.dumps({"version": kill_list.version, "day": kill_list.day,
+                                       "entries": [e.as_json() for e in kill_list.entries]}))
         except OSError as exc:
             logger.warning("blackbox: could not save the kill list (%s); the previous one stays in force", exc)

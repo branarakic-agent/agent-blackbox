@@ -12,7 +12,6 @@ import pytest
 
 from _blackbox_loader import load_blackbox
 
-
 blackbox = load_blackbox()
 hooks = load_blackbox("guard.hooks")
 community_sharing = load_blackbox("community.sharing")
@@ -268,9 +267,9 @@ def test_managed_sync_repairs_native_reconciliation_before_sync(
     assert persisted["syncOnConnectEnabled"] is True
     assert persisted["syncReconcilerEnabled"] is True
     assert persisted["durableSyncEnabled"] is True
-    assert persisted["syncSharedMemoryOnConnect"] is False
-    assert persisted["syncGlobalMaxInflight"] == 1
-    assert persisted["syncGlobalQueueLimit"] == 0
+    assert persisted["syncSharedMemoryOnConnect"] is True   # one graph: missed reports come back on connect
+    assert persisted["syncGlobalMaxInflight"] == 10   # the node default (KI-449)
+    assert persisted["syncGlobalQueueLimit"] == 20
 
 
 def test_managed_sync_keeps_existing_steady_node_running(monkeypatch, tmp_path):
@@ -284,9 +283,9 @@ def test_managed_sync_keeps_existing_steady_node_running(monkeypatch, tmp_path):
                 "syncOnConnectEnabled": True,
                 "syncReconcilerEnabled": True,
                 "durableSyncEnabled": True,
-                "syncGlobalMaxInflight": 1,
-                "syncGlobalQueueLimit": 0,
-                "syncSharedMemoryOnConnect": False,
+                "syncGlobalMaxInflight": 10,
+                "syncGlobalQueueLimit": 20,
+                "syncSharedMemoryOnConnect": True,
             }
         ),
         encoding="utf-8",
@@ -410,7 +409,7 @@ def test_managed_sync_repairs_interrupted_upgrade_and_preserves_checkpoint(
 
     args = argparse.Namespace(wait=True, timeout=30, require_rules=True)
     assert sync_command.cmd_sync(args) == 2
-    assert restart_modes == [(True, True, 0)]
+    assert restart_modes == [(True, True, 20)]
     assert checkpoint.read_bytes() == b"existing-partial-sync"
     assert current["safe_current_triples"] == 51_642
     assert current["expected_triples"] == 6_117_721
@@ -1118,6 +1117,7 @@ def test_blackbox_sync_waits_for_public_vm_when_community_arrives_first(monkeypa
             context_graph_id=constants.DEFAULT_CONTEXT_GRAPH_ID,
             dkg_url=constants.DEFAULT_DKG_URL,
             graph_peer_id=constants.DEFAULT_GRAPH_PEER_ID,
+            report=False,
         ),
     )
     monkeypatch.setattr(sync_command.ruleset, "refresh", fake_refresh)
@@ -1133,8 +1133,9 @@ def test_blackbox_sync_waits_for_public_vm_when_community_arrives_first(monkeypa
     ]
     out = capsys.readouterr().out
     assert "2 public VM (curated)" in out
-    # The community graph has been live since 7231dbe34e (it used to say "coming soon").
-    assert f"Community graph: {constants.DEFAULT_COMMUNITY_GRAPH_ID}" in out
+    # The community has been live since 7231dbe34e (it used to say "coming soon"); since
+    # 2026-10-16 it lives in the verified graph's shared memory.
+    assert f"Community reports: shared memory of {constants.DEFAULT_CONTEXT_GRAPH_ID}" in out
 
 
 def test_blackbox_sync_recovers_curator_snapshot_then_waits_for_vm(
@@ -1560,7 +1561,6 @@ def test_required_release_sync_persists_subscription_after_direct_connect_failur
             context_graph_id=constants.DEFAULT_CONTEXT_GRAPH_ID,
             dkg_url=constants.DEFAULT_DKG_URL,
             graph_peer_id=constants.DEFAULT_GRAPH_PEER_ID,
-            community_graph_id="",   # this test is about the verified sync alone
         ),
     )
     monkeypatch.setattr(sync_command.ruleset, "peek", lambda _cfg: EmptyRuleset())
@@ -3273,11 +3273,11 @@ def test_share_sighting_forwards_candidate_fields(monkeypatch, tmp_path):
         def status(self):
             return {"networkId": "test-network-id"}  # signing needs it (R0b)
 
-        def share_knowledge_asset(self, cg, name, q):
+        def share_knowledge_asset(self, cg, name, q, sub_graph="reports"):
             shared["quads"] = q
             return {}
 
-    cfg = config_mod.BlackboxConfig(community_graph_id="0xabc/agent-blackbox-community-test")
+    cfg = config_mod.BlackboxConfig(context_graph_id="0xabc/agent-blackbox-community-test")
     finding = {
         "identifier": "fileaccess:read_file:ssh-private-key",
         "category": "fileaccess", "severity": "critical", "confirmed": False,

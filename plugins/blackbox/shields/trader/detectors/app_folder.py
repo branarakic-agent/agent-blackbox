@@ -198,8 +198,9 @@ class AppFolderMatcher:
         return None
 
     def existing(self) -> list[tuple[str, Owner]]:
-        """``[(normalized place, owner)]`` for every place present on this machine (a bounded
-        glob over the packs' places; nothing inside is opened), then each pointer's key file."""
+        """``[(place as it is on disk, owner)]`` for every place present on this machine (a
+        bounded glob over the packs' places; nothing inside is opened), then each pointer's key
+        file. Case is kept: callers that match lower-case it (``normalize_path``)."""
         found: list[tuple[str, Owner]] = []
         for owner, places in self._places:
             for place in places:
@@ -207,9 +208,10 @@ class AppFolderMatcher:
                 if "%" in pattern:
                     continue
                 for match in glob.glob(pattern):
-                    found.append((match.replace("\\", "/").lower(), owner))
+                    found.append((match.replace("\\", "/"), owner))
         for pack in self.packs:
             configured = POINTER_FILES.get(pack)
-            if configured and os.path.exists(configured) and all(configured != place for place, _ in found):
+            if configured and os.path.exists(configured) and \
+                    all(configured != place.lower() for place, _ in found):
                 found.append((configured, Owner(pack.id, pack.name)))
         return found

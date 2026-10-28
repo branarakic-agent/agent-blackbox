@@ -21,15 +21,14 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import secrets
 import threading
 from dataclasses import dataclass
-from datetime import datetime, timezone, UTC
+from datetime import datetime, UTC
 from pathlib import Path
-from typing import Any, Dict, FrozenSet, Iterable, List, Optional, Tuple
+from typing import Any, Iterable, Optional
 
 from ..kernel import constants
+from ..kernel.bounded_files import atomic_write
 
 logger = logging.getLogger(__name__)
 _STORE_FILE = "overrides.json"
@@ -99,9 +98,7 @@ class OverrideStore:
     def _save(self, current: dict[str, LocalOverride]) -> None:
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self._path.with_name(f"{self._path.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}")
-            tmp.write_text(json.dumps({"overrides": [o.as_json() for o in current.values()]}), encoding="utf-8")
-            os.replace(tmp, self._path)
+            atomic_write(self._path, json.dumps({"overrides": [o.as_json() for o in current.values()]}))
         except OSError as exc:
             logger.warning("blackbox: could not save local overrides (%s)", exc)
 

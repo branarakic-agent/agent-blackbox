@@ -17,16 +17,16 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Optional
 
 from ...kernel import constants
 from ...kernel.dkg_client import DkgClient, extract_binding
 from .. import graph_queries
 from .rows import Row
+from ...kernel.bounded_files import atomic_write
 
 logger = logging.getLogger(__name__)
 
@@ -85,9 +85,7 @@ def record_progress(cg_id: str, read: PartitionRead) -> None:
     }
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(f".tmp-{os.getpid()}")
-        tmp.write_text(json.dumps(record), encoding="utf-8")
-        os.replace(tmp, path)
+        atomic_write(path, json.dumps(record))
     except OSError as exc:
         logger.warning("blackbox: could not record verified-graph progress: %s", exc)
 

@@ -29,9 +29,9 @@ from datetime import date, timedelta
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from ...kernel import constants, signing, threat_ids
-from ...kernel.signing.authority import Authority
-from ...kernel.signing.key_manifest import KeyManifest
-from ...kernel.signing.statement_order import CuratorStatement
+from ...kernel.signing import Authority
+from ...kernel.signing import KeyManifest
+from ...kernel.signing import CuratorStatement
 from .. import report_schema, stages
 from ..statements import curator_statements, curator_view
 from ..statements.curator_statements import CuratorRecord

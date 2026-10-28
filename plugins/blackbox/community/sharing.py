@@ -2,20 +2,22 @@
 
 :class:`CommunitySharePolicy` is THE outbound gate (Strategy/Policy object;
 pure ``decide()``); :func:`spawn_community_share` sends an allowed finding to
-the community graph on a background thread and records the outcome in the
-share ledger. The reporter identity comes from ``kernel.identity`` — the gate
+the community — the verified graph's shared memory, sub-graph
+``constants.COMMUNITY_SUB_GRAPH`` — on a background thread and records the
+outcome in the share ledger. The reporter identity comes from ``kernel.identity`` — the gate
 refuses to share without one (KI-003).
 """
 
 from __future__ import annotations
 
+import contextvars
 import logging
 import threading
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 from .. import audit, detection
 from .. import community
-from ..kernel import threat_ids
+from ..kernel import constants, threat_ids
 from . import consent, keep_alive, membership, report_schema, report_signer, share_retry
 from ..kernel.config import BlackboxConfig
 from ..kernel.dkg_client import DkgClient, DkgError
@@ -49,7 +51,7 @@ def is_vulnerability_finding(finding: dict[str, Any]) -> bool:
 
 
 class CommunitySharePolicy:
-    """Decides whether ONE finding may be shared to the community graph.
+    """Decides whether ONE finding may be shared to the community.
 
     Pattern: Policy object (Strategy) — the entire outbound gate chain lives
     in this single, dependency-injected, testable class instead of scattered
@@ -157,8 +159,10 @@ class ShareOutcome(Enum):
 ALREADY_SEALED_REPLY = "is not an active working memory draft"
 
 
-def send_report(client: DkgClient, graph: str, name: str, quads: list[dict[str, str]]) -> tuple[ShareOutcome, str]:
-    """Send one built report and say honestly what happened: (outcome, detail).
+def send_report(client: DkgClient, graph: str, name: str, quads: list[dict[str, str]],
+                lane: str = constants.COMMUNITY_SUB_GRAPH) -> tuple[ShareOutcome, str]:
+    """Send one built report into *lane* (a shared-memory sub-graph) and say honestly
+    what happened: (outcome, detail).
 
     A report this node already got onto the network (its ledger says so) is
     not re-sent; neither is one the daemon reports as already sealed. Both
@@ -168,8 +172,8 @@ def send_report(client: DkgClient, graph: str, name: str, quads: list[dict[str, 
     if audit.previously_accepted(name):
         return ShareOutcome.REJECTED_SAME_VERSION, "already shared earlier; a same-version re-share is refused by peers"
     try:
-        membership.ensure_report_lane(client, graph)   # the community subgraph, registered once per process
-        result = client.share_knowledge_asset(graph, name, quads)
+        membership.ensure_report_lane(client, graph)   # registers the lanes on the graph owner's node only
+        result = client.share_knowledge_asset(graph, name, quads, sub_graph=lane)
     except Exception as exc:  # the outermost send boundary: any failure is FAILED, never raised
         if isinstance(exc, DkgError) and ALREADY_SEALED_REPLY in str(exc).lower():
             return ShareOutcome.REJECTED_SAME_VERSION, "the node already holds this report sealed (not re-sent)"
@@ -189,9 +193,10 @@ def spawn_community_share(
     hook returns immediately; the share can take the node's full store/poll
     timeouts without ever freezing the protected agent.
     """
+    # copy_context: a share started inside audit.sandbox_run() ledgers into the sandbox too
     worker = threading.Thread(
-        target=_share_sighting,
-        args=(client, cfg, finding, reporter),
+        target=contextvars.copy_context().run,
+        args=(_share_sighting, client, cfg, finding, reporter),
         name="blackbox-community-share",
         daemon=True,
     )
@@ -202,18 +207,20 @@ def spawn_community_share(
 def _share_sighting(
     client: DkgClient, cfg: BlackboxConfig, finding: dict[str, Any], reporter: str
 ) -> None:
-    """Share one privacy-safe sighting into the COMMUNITY graph and ledger it.
+    """Share one privacy-safe sighting with the community and ledger it.
 
-    Targets ``cfg.community_graph_id`` — never the verified graph: the
-    two-graph separation is the product's core trust boundary. Every attempt
+    Targets the verified graph's SHARED memory, sub-graph
+    ``constants.COMMUNITY_SUB_GRAPH`` (one graph, 2026-10-16) — never its
+    Verified Memory: only the curator publishes there, and a report reaches it
+    only when the curator promotes what it confirmed. Every attempt
     (success or failure) lands in the local reports ledger (KI-015) so the
     node keeps a durable record of its contributions. A node that cannot sign
     does not share (R0b): the refusal is ledgered like any failure. Fail-open.
     """
     identifier = str(finding.get("identifier") or "")
     subject = threat_ids.report_uri(identifier, reporter)
-    name = f"report-{threat_ids.stable_hash(identifier + reporter, 16)}"
-    signer = report_signer.resolve_report_signer(client, cfg.community_graph_id)
+    name = f"{'sandbox' if cfg.community_sandbox else 'report'}-{threat_ids.stable_hash(identifier + reporter, 16)}"
+    signer = report_signer.resolve_report_signer(client, cfg.context_graph_id)
     if signer is None:
         _ledger_share(finding, subject, name, ok=False, error="cannot sign reports (no network id or reporter key)")
         return
@@ -229,15 +236,31 @@ def _share_sighting(
             signer=signer,
             **fields,
         )
-        outcome, detail = send_report(client, cfg.community_graph_id, name, q)
+        outcome, detail = send_report(client, cfg.context_graph_id, name, q, lane=community_lane(cfg))
     except Exception as exc:  # pragma: no cover - fail open (building the report failed)
         logger.debug("blackbox: sighting share error: %s", exc)
         _ledger_share(finding, subject, name, ok=False, error=str(exc), outcome=ShareOutcome.FAILED.value)
         return
+    _after_send(cfg, finding, name, subject, q, outcome, detail)
+
+
+def community_lane(cfg: BlackboxConfig) -> str:
+    """The sub-graph this node's shares go to: ``sandbox`` in sandbox mode, else ``reports``."""
+    return constants.SANDBOX_SUB_GRAPH if cfg.community_sandbox else constants.COMMUNITY_SUB_GRAPH
+
+
+def _after_send(cfg: BlackboxConfig, finding: dict[str, Any], name: str, subject: str,
+                q: list[dict[str, str]], outcome: ShareOutcome, detail: str) -> None:
+    """Ledger one send; a refused real share is queued for retry, an accepted one kept alive.
+    A sandbox test is only ledgered (in the sandbox folder): never retried, never kept alive."""
+    identifier = str(finding.get("identifier") or "")
+    if cfg.community_sandbox:
+        _ledger_share(finding, subject, name, ok=outcome is ShareOutcome.ACCEPTED, error=detail, outcome=outcome.value)
+        return
     if outcome is ShareOutcome.FAILED:
         # R16 (KI-202): a refused write is retried with backoff — a newly subscribed
         # node is refused for minutes on mainnet; its first catches must not be lost.
-        share_retry.queue_failed_share(graph=cfg.community_graph_id, name=name, identifier=identifier,
+        share_retry.queue_failed_share(graph=cfg.context_graph_id, name=name, identifier=identifier,
                                        category=str(finding.get("category") or ""),
                                        severity=str(finding.get("severity") or "info"), subject=subject, quads=q,
                                        error=detail)

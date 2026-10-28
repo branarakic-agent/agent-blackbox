@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from ...kernel import constants
+from ...kernel.bounded_files import atomic_write
 
 logger = logging.getLogger(__name__)
 _FILE = "shadow_metrics.jsonl"
@@ -109,9 +110,7 @@ def write_snapshot(snapshot: Snapshot, path: Optional[Path] = None) -> None:
         lines = [line for line in target.read_text(encoding="utf-8-sig").splitlines() if line.strip()] if target.exists() else []
         lines = (lines + [json.dumps(asdict(snapshot))])[-MAX_SNAPSHOTS:]
         target.parent.mkdir(parents=True, exist_ok=True)
-        tmp = target.with_name(f"{target.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}")
-        tmp.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        os.replace(tmp, target)
+        atomic_write(target, "\n".join(lines) + "\n")
     except OSError as exc:
         logger.warning("blackbox: shadow metrics not written (%s)", exc)
 

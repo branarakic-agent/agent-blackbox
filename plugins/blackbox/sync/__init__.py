@@ -26,8 +26,10 @@ from ..kernel.config import load_blackbox_config
 from ..kernel.dkg_client import DkgClient
 from .command import cmd_sync as _sync_with_node
 from .progress import read_durable_progress, read_recovery_backlog
+from .snapshot_readiness import defaults as snapshot_defaults, validate_requested_profile as validate_snapshot_profile
 
-__all__ = ["cmd_sync", "progress", "read_durable_progress", "read_recovery_backlog", "state"]
+__all__ = ["cmd_sync", "progress", "read_durable_progress", "read_recovery_backlog",
+           "snapshot_defaults", "state", "validate_snapshot_profile"]
 
 
 def cmd_sync(args: argparse.Namespace) -> int:
@@ -35,7 +37,7 @@ def cmd_sync(args: argparse.Namespace) -> int:
     install brings the plugin only — it says how to install one instead of waiting on a node that
     is not there (exit 2 with ``--wait``); otherwise :func:`.command.cmd_sync`."""
     cfg = load_blackbox_config()
-    if not health.node_installed(cfg, DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home).reachable()):
+    if not health.node_installed(cfg, DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home, config=cfg).reachable()):
         print("Blackbox setup has not run, so there is no DKG node and no threat graph to sync. "
               f"To {health.NODE_INSTALL_HINT}.")
         return 2 if getattr(args, "wait", False) else 0

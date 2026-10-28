@@ -17,7 +17,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from ...kernel import display_safety, reporter_key
 from ...kernel.dkg_client import DkgClient
-from ...kernel.signing.statement_order import CuratorStatement
+from ...kernel.signing import CuratorStatement
 from .. import reader as graph_reader
 from .. import reputation
 from ..statements.curator_view import today_utc as curator_today
@@ -57,13 +57,13 @@ def report_standing(cfg) -> int:
         print("This node has not signed a report yet; standing starts with the first report.")
         return 0
     own = store.public_key_hex()
-    if not cfg.community_graph_id:
-        print("No community graph configured.")
+    if not cfg.context_graph_id:
+        print("No graph configured.")
         return 0
-    client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
+    client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home, config=cfg)
     read = graph_reader.read_verified_reports(client, cfg)
     if not read.available:
-        print(f"Community graph unavailable right now: {display_safety.term_safe(read.reason, 160)}")
+        print(f"Community reports unavailable right now: {display_safety.term_safe(read.reason, 160)}")
         return 1
     for line in standing_lines(own, read):
         print(line)

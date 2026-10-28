@@ -179,8 +179,15 @@ def test_packages_are_used_only_through_their_entry():
             if not parts:
                 continue  # `from . import x` / `from .. import x` at plugin root: package-level, fine
             package = parts[0]
-            if package == owner or package == "kernel" or not (PLUGIN / package).is_dir():
+            if package == owner or not (PLUGIN / package).is_dir():
                 continue
+            if package == "kernel":
+                # A kernel MODULE (kernel/config.py) is public as a whole; a kernel SUB-PACKAGE
+                # (kernel/signing/) is used through its __init__ like any package — 61 sites once
+                # bound to kernel/signing internals its surface never exported (review 2026-10-22).
+                if len(parts) == 1 or not (PLUGIN / "kernel" / parts[1]).is_dir():
+                    continue
+                package, parts = "kernel/" + parts[1], parts[1:]
             if len(parts) > 1:
                 violations.append(f"{path.relative_to(PLUGIN)}:{lineno} imports {target} (internal)")
                 continue

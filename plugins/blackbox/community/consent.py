@@ -1,4 +1,4 @@
-"""Whether this machine may share with the community graph — the ONE gate
+"""Whether this machine may share with the community — the ONE gate
 every send path asks (Refine R13, revised 2026-10-16).
 
 Community sharing is OPT-IN: off until the operator turns it on (2026-10-16,
@@ -41,6 +41,7 @@ from pathlib import Path
 from typing import Any, Mapping, Optional
 
 from ..kernel import constants
+from ..kernel.bounded_files import atomic_write
 
 logger = logging.getLogger(__name__)
 
@@ -112,8 +113,8 @@ def in_force() -> bool:
 
 
 def sharing_on(cfg: Any) -> bool:
-    """Whether this node shares with the community graph right now: the build and the
-    operator's switch and a community graph (``cfg.community_enabled``) AND a consent in force
+    """Whether this node shares with the community right now: the build and the
+    operator's switch and a graph (``cfg.community_enabled``) AND a consent in force
     — the two checks the share gate makes. Every "is sharing on?" display reads this, so an
     opt-out made with ``blackbox report --withdraw-consent`` never shows as on."""
     return bool(getattr(cfg, "community_enabled", False)) and in_force()
@@ -198,10 +199,7 @@ def _save(entry: SharingConsentRecord) -> bool:
     path = _record_path()
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}")
-        tmp.write_text(json.dumps(entry.__dict__), encoding="utf-8")
-        os.chmod(tmp, 0o600)
-        os.replace(tmp, path)
+        atomic_write(path, json.dumps(entry.__dict__), mode=0o600)
         return True
     except OSError as exc:   # an opt-out that could not be written must be loud: sharing would continue
         logger.warning("blackbox: could not save the community sharing choice (%s)", exc)

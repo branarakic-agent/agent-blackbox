@@ -43,9 +43,9 @@ from dataclasses import dataclass
 from typing import AbstractSet, Any, Dict, List, Mapping, Optional, Tuple
 
 from ...kernel import signing
-from ...kernel.signing.key_manifest import KeyManifest
-from ...kernel.signing.statement_order import CuratorStatement
-from ...kernel.signing.trust_anchors import RootPins
+from ...kernel.signing import KeyManifest
+from ...kernel.signing import CuratorStatement
+from ...kernel.signing import RootPins
 from ..statements import curator_statements, curator_view
 from ..trust import manifests as manifest_policy
 from ..verification import ReportVerifier, VerifiedReport

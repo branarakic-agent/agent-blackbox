@@ -111,6 +111,20 @@ def wordlist_ready() -> bool:
     return _wordlist() is not None
 
 
+def phrase_from_entropy(entropy: bytes) -> Optional[str]:
+    """The BIP-39 phrase for *entropy* (16–32 bytes, a multiple of 4), checksum included,
+    from the pinned list — e.g. a fresh ``secrets.token_bytes(16)`` for a 12-word test
+    phrase that opens nothing. ``None`` when the wordlist is off or the length is not standard."""
+    words = _wordlist()
+    if words is None or len(entropy) not in (16, 20, 24, 28, 32):
+        return None
+    by_index = list(words)
+    checksum_bits = len(entropy) * 8 // 32
+    value = int.from_bytes(entropy, "big") << checksum_bits | hashlib.sha256(entropy).digest()[0] >> (8 - checksum_bits)
+    count = (len(entropy) * 8 + checksum_bits) // 11
+    return " ".join(by_index[(value >> (11 * (count - 1 - position))) & 0x7FF] for position in range(count))
+
+
 def checksum_entropy(indices: list[int]) -> Optional[bytes]:
     """The entropy behind word *indices* when their BIP-39 checksum holds,
     else ``None``. ``len(indices)`` must be a standard phrase length."""

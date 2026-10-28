@@ -29,6 +29,9 @@ import os
 logger = logging.getLogger(__name__)
 
 
+__all__ = ["read_host_secret"]   # the surface other modules may import
+
+
 def read_host_secret(name: str) -> str:
     """The value Hermes gives the variable *name* for the profile being served, or "".
 

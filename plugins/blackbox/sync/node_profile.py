@@ -12,22 +12,30 @@ import json
 import os
 import psutil
 from pathlib import Path
-from typing import Dict
 
 from ..kernel.config import BlackboxConfig
+from . import process_limits
+from ..kernel.bounded_files import atomic_write
 
+#: The node's own sync limits (DKG 10.0.25 defaults: 10 transfers at once, a queue of 20),
+#: so the verified download and the graph's shared memory (the community) sync side by
+#: side. Blackbox ran the node with ONE slot and no queue until 2026-10-22; under one graph
+#: the community catch-ups then starved the verified download (30 of 565 assets after 40
+#: minutes). Bench with 10 slots and the community on from the start: the whole graph in
+#: about 30 minutes, no deferred fetch, no store recovery, ~4.4 GB of 8 GB in use.
+#: Existing installs move to these values at their next sync (one node restart).
 _DKG_STEADY_SYNC_SETTINGS = {
     "DKG_SYNC_ON_CONNECT_ENABLED": "1",
     "DKG_SYNC_RECONCILER_ENABLED": "1",
     "DKG_DURABLE_SYNC_ENABLED": "1",
-    "DKG_SYNC_GLOBAL_MAX_INFLIGHT": "1",
-    "DKG_SYNC_GLOBAL_QUEUE_LIMIT": "0",
+    "DKG_SYNC_GLOBAL_MAX_INFLIGHT": "10",
+    "DKG_SYNC_GLOBAL_QUEUE_LIMIT": "20",
 }
 
 #: The native profile for Umanitek's default graph on DKG 10.0.21+ (KI-282):
 #: the node's own VM reconciler recovers the graph, and the older periodic sync
-#: reconciler is off so it does not compete with that recovery for the single
-#: sync slot. Connection-time sync stays on (KI-044). See :mod:`.native`.
+#: reconciler is off so it does not compete with that recovery for sync slots.
+#: Connection-time sync stays on (KI-044). See :mod:`.native`.
 _DKG_NATIVE_SYNC_SETTINGS = {
     **_DKG_STEADY_SYNC_SETTINGS,
     "DKG_SYNC_RECONCILER_ENABLED": "0",
@@ -75,11 +83,21 @@ def node_sync_settings(cfg: BlackboxConfig) -> dict[str, str]:
     """
     from . import native   # sibling module; lazy so the two never import-cycle
 
-    if not native.handles(cfg):
-        return dict(_DKG_STEADY_SYNC_SETTINGS)
-    settings = dict(_DKG_NATIVE_SYNC_SETTINGS)
-    for name, default in _DKG_RECOVERY_SPEEDUPS.items():
-        settings[name] = os.environ.get(name, default)
+    if cfg.snapshot_sync is not None:
+        # The VM reconciler stays ON beside the snapshot download: its pass line
+        # (``pending=N`` in daemon.log) is the only place the node states the graph's
+        # size mid-sync, and the dashboard's progress bar reads it (Amos, 2026-10-28:
+        # keep the percentage). Its cost to the snapshot's speed is measured on a bench.
+        return {**_DKG_NATIVE_SYNC_SETTINGS,
+                "DKG_SYNC_ON_CONNECT_ENABLED": "0",
+                "DKG_EXACT_BATCH_STREAM_ENABLED": "1", "DKG_VM_RECOVERY_PREFETCH_ENABLED": "0"}
+    settings = dict(_DKG_NATIVE_SYNC_SETTINGS if native.handles(cfg) else _DKG_STEADY_SYNC_SETTINGS)
+    # The tables carry the ≥ 8 GB values; a smaller machine runs fewer transfers at once.
+    inflight, queue = process_limits.sync_slots()
+    settings["DKG_SYNC_GLOBAL_MAX_INFLIGHT"], settings["DKG_SYNC_GLOBAL_QUEUE_LIMIT"] = str(inflight), str(queue)
+    if native.handles(cfg):
+        for name, default in _DKG_RECOVERY_SPEEDUPS.items():
+            settings[name] = os.environ.get(name, default)
     return settings
 
 
@@ -160,10 +178,11 @@ def _set_persisted_dkg_sync_state(cfg: BlackboxConfig) -> bool:
         if key is None:
             continue   # an environment-only switch: see _DKG_ENV_ONLY_SETTINGS
         data[key] = int(value) if key in _INTEGER_CONFIG_KEYS else value == "1"
-    data["syncSharedMemoryOnConnect"] = False
+    # One graph (2026-10-16): the community's reports live in the verified graph's
+    # shared memory, and reports written while this node was offline come back only
+    # through the shared-memory step of sync-on-connect.
+    data["syncSharedMemoryOnConnect"] = True
     if original == json.dumps(data, sort_keys=True):
         return False
-    tmp = path.with_suffix(f".tmp-{os.getpid()}")
-    tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-    os.replace(tmp, path)
+    atomic_write(path, json.dumps(data, indent=2) + "\n")
     return True

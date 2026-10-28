@@ -119,16 +119,27 @@ def _dedupe_finding_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def read_findings(limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
     """Return findings newest-first, paged, merged across every agent's log.
 
-    Reads ``findings.jsonl`` plus any ``findings.<framework>.jsonl`` siblings.
-    Empty on any error.
+    Reads ``findings.jsonl`` plus any ``findings.<framework>.jsonl`` siblings —
+    once per change on disk (:func:`log_store.cached`); pages are slices of
+    that one parsed, deduped, sorted list. Empty on any error.
     """
+    return _all_findings()[offset : offset + limit]
+
+
+def _all_findings() -> list[dict[str, Any]]:
+    files = log_store._findings_files()
+    key = f"findings:{log_store._home()}"
+    return log_store.cached(key, [path for path, _ in files], lambda: _load_finding_rows(files))
+
+
+def _load_finding_rows(files: list[tuple[Any, str]]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for path, default_fw in log_store._findings_files():
+    for path, default_fw in files:
         if not path.exists():
             continue
         try:
             lines = path.read_text(encoding="utf-8-sig").splitlines()
-        except Exception:
+        except OSError:
             continue
         for line in lines:
             line = line.strip()
@@ -136,13 +147,13 @@ def read_findings(limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
                 continue
             try:
                 rec = json.loads(line)
-            except Exception:
+            except ValueError:
                 continue
             rows.append(_flatten_finding_row(rec, default_fw))
     rows = _dedupe_finding_rows(rows)
     # Newest-first across all logs; rows with no numeric ts keep insertion order.
     rows.sort(key=lambda r: r.get("ts") or 0, reverse=True)
-    return rows[offset : offset + limit]
+    return rows
 
 
 #: Rows scanned when counting how often each threat fired here (bounded).
@@ -163,7 +174,7 @@ def blocked_counts_by_identifier(limit: int = _FIRED_SCAN_LIMIT) -> dict[str, in
 
 
 def count_findings() -> int:
-    return len(read_findings(limit=1_000_000))
+    return len(_all_findings())
 
 
 def local_frameworks() -> list[str]:

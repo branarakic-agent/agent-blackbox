@@ -52,11 +52,12 @@ from typing import TYPE_CHECKING, Callable, List, Mapping, Optional, Sequence
 from ... import community
 from ...community import reputation
 from ...kernel import signing
-from ...kernel.signing.statement_order import CuratorStatement
-from .. import keys, publishing, queue, transport, verbs
+from ...kernel.signing import CuratorStatement
+from .. import keys, publishing, queue, verbs
+from ..proposals import transport
 from ..context import CurateContext
 from ..ladder import outcomes
-from ..proposal import Proposal, ProposalState, ProposalStore
+from ..proposals import Proposal, ProposalState, ProposalStore
 from ..upkeep import heartbeat, published
 from . import evidence, inbox, policy, self_test
 from .budget import ServiceBudget

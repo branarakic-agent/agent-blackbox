@@ -23,12 +23,12 @@ import pytest
 
 from plugins.blackbox import killlist, ruleset
 from plugins.blackbox.curate import verbs
-from plugins.blackbox.curate.proposal import ProposalStore
+from plugins.blackbox.curate.proposals.proposal import ProposalStore
 from plugins.blackbox.guard import hooks
 from plugins.blackbox.kernel import signing
 from plugins.blackbox.kernel.config import BlackboxConfig
 from plugins.blackbox.ruleset import compiler, curator_tier, disk_cache
-from test_blackbox_curate import COMMUNITY, NETWORK, VM_GRAPH, FakeNode, _ctx, _machine, curators
+from test_blackbox_curate import NETWORK, VM_GRAPH, FakeNode, _ctx, _machine, curators
 
 DAY = "2026-10-02"
 NOW = 1_800_000_000.0
@@ -193,7 +193,7 @@ def test_the_refresh_admits_the_newest_list_and_keeps_last_good_on_a_refusal(mon
     two = [curators["a"], curators["b"]]
     import plugins.blackbox.community.statements.curator_view as cv
     monkeypatch.setattr(curator_tier.community, "read_curator_view", lambda client, cfg: cv.CuratorView(manifest=manifest))
-    cfg = BlackboxConfig(context_graph_id=VM_GRAPH, community_graph_id=COMMUNITY)
+    cfg = BlackboxConfig(context_graph_id=VM_GRAPH)
     good, _ = _signed([_entry(version="1.0.0")], two, manifest, version=1)
     rs = compiler.Ruleset(synced_at=NOW)
     curator_tier.apply_curator_tier(rs, _VmNode([_row(good)]), cfg)

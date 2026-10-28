@@ -22,8 +22,8 @@ _STEADY_CONFIG = {
     "syncOnConnectEnabled": True,
     "syncReconcilerEnabled": True,
     "durableSyncEnabled": True,
-    "syncGlobalMaxInflight": 1,
-    "syncGlobalQueueLimit": 0,
+    "syncGlobalMaxInflight": 10,
+    "syncGlobalQueueLimit": 20,
 }
 
 
@@ -60,6 +60,17 @@ def test_service_launched_worker_without_env_overrides_is_in_steady_mode(dkg_hom
 
 def test_stale_env_override_still_forces_restart_over_steady_config(dkg_home, monkeypatch):
     _worker_with_env(monkeypatch, {"DKG_SYNC_RECONCILER_ENABLED": "0"})
+    cfg = config_mod.BlackboxConfig(dkg_home=str(dkg_home))
+
+    assert not managed_node._managed_dkg_sync_mode_matches(cfg, managed_node._DKG_STEADY_SYNC_SETTINGS)
+
+
+def test_a_node_on_the_old_single_slot_profile_is_moved_to_the_node_default(dkg_home, monkeypatch):
+    """KI-449: installs from before 2026-10-22 persisted one sync slot; their next sync
+    sees the mismatch and restarts the node onto the node's own default of 10."""
+    old = {**_STEADY_CONFIG, "syncGlobalMaxInflight": 1, "syncGlobalQueueLimit": 0}
+    (dkg_home / "config.json").write_text(json.dumps(old), encoding="utf-8")
+    _worker_with_env(monkeypatch, {})
     cfg = config_mod.BlackboxConfig(dkg_home=str(dkg_home))
 
     assert not managed_node._managed_dkg_sync_mode_matches(cfg, managed_node._DKG_STEADY_SYNC_SETTINGS)

@@ -34,10 +34,11 @@ from datetime import datetime, timezone, UTC
 from typing import Any, Callable, Dict, Optional
 
 from ...kernel.signing import key_manifest, trust_anchors
-from ...kernel.signing.authority import Authority
-from .. import consent, publishing
+from ...kernel.signing import Authority
+from .. import publishing
+from ..proposals import consent
 from ..context import CurateContext
-from ..proposal import Proposal, ProposalState, ProposalStore
+from ..proposals import Proposal, ProposalState, ProposalStore
 from .metrics import MetricsSources, collect_metrics
 from .root_signer import RootSigner, RootSignerError, TotpSecondFactor
 from .root_store import EncryptedRootStore

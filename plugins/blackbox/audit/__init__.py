@@ -35,6 +35,7 @@ from .findings import (
 )
 from .private_ka import node_is_local, write_private_audit_ka
 from .local_graph import local_audit_graph
+from .log_store import in_sandbox_run, sandbox_run
 from .redaction import redact, sanitize_text
 from .share_ledger import (
     allow_report,
@@ -52,6 +53,7 @@ __all__ = [
     "count_audit",
     "count_findings",
     "erase_share_records",
+    "in_sandbox_run",
     "local_active_frameworks",
     "local_audit_graph",
     "local_frameworks",
@@ -69,6 +71,7 @@ __all__ = [
     "record_file_access",
     "record_share_outcome",
     "redact",
+    "sandbox_run",
     "sanitize_text",
     "write_private_audit_ka",
 ]

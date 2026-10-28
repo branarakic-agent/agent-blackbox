@@ -118,10 +118,12 @@ def test_the_threat_sharing_tile_reads_off_over_a_withdrawn_consent(real_consent
     from plugins.blackbox.dashboard import community_routes
     from plugins.blackbox.kernel import config as kernel_config
 
-    cfg = dataclasses.replace(load_blackbox_config(), report=True, community_graph_id="0xowner/agent-blackbox-community")
+    cfg = dataclasses.replace(load_blackbox_config(), report=True, context_graph_id="0xowner/agent-blackbox-vm")
     assert cfg.community_enabled                             # the switch alone says "on"
     monkeypatch.setattr(kernel_config, "load_blackbox_config", lambda: cfg)
     monkeypatch.setattr(community, "read_join_state", lambda client, graph: None)   # no node in tests
+    monkeypatch.setattr(community, "read_membership_status", lambda client, graph: None)
+    community_routes.MEMBERSHIP_STATUS.clear()
     monkeypatch.setattr(community, "contributing_agent_count", lambda reports: 0)
     real_consent.withdraw()
 

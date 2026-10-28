@@ -126,7 +126,7 @@ def test_an_undated_manifest_never_beats_a_dated_one_and_a_conflict_freezes(keys
 def test_no_consent_in_force_stops_keep_alive_retries_and_digests(real_consent, tmp_path, monkeypatch, state):
     """Sharing is opt-in (2026-10-16): with no acceptance on record — the default — or after a
     withdrawal, nothing leaves on any beat, even with `report: true`; the opt-in starts them."""
-    cfg = BlackboxConfig(report=True, community_graph_id=GRAPH)
+    cfg = BlackboxConfig(report=True, context_graph_id=GRAPH)
     store = keep_alive.LiveReportStore(tmp_path / "live.json", clock=lambda: 1_800_000_000.0)
     store.remember(graph=GRAPH, name="report-a", identifier=THREAT, subject="s", severity="high", quads=[{"a": "b"}], epoch=keep_alive.Epoch(1))
     queue = share_retry.ShareRetryQueue(tmp_path / "q.json", clock=lambda: 1_800_000_000.0 + 100)
@@ -202,13 +202,13 @@ def test_a_listing_longer_than_twelve_months_is_refused_and_a_signed_pause_is_en
     monkeypatch.setattr(community_tier.community, "read_verified_reports",
                         lambda client, cfg, **kw: CommunityRead(ReadState.ROWS, reports=(), curator=view))
     rs = compiler.Ruleset()
-    community_tier.apply_community_tier(rs, FakeClient(), BlackboxConfig(community_graph_id=GRAPH), None)
+    community_tier.apply_community_tier(rs, FakeClient(), BlackboxConfig(context_graph_id=GRAPH), None)
     assert rs.community_paused is True and rs.community == {}
 
 
 def test_a_cosign_that_outgrows_the_envelope_is_a_refusal(keys, monkeypatch, tmp_path):
     from plugins.blackbox.curate import verbs
-    from plugins.blackbox.curate.proposal import Proposal, ProposalState, ProposalStore
+    from plugins.blackbox.curate.proposals.proposal import Proposal, ProposalState, ProposalStore
     from test_blackbox_curate import FakeNode, _ctx, _machine
     manifest = _manifest(keys, graph="0xabc/agent-blackbox-vm")
     big = killlist.KillList(version=1, day=TODAY, entries=(killlist.KillEntry("skill", "evil", killlist.KillAction.WARN, version="1"),))

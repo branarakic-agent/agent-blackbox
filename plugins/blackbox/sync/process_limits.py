@@ -116,28 +116,54 @@ def read_physical_memory() -> int | None:
     return None
 
 
-def resolve_dkg_heap_mb(default_mb: int = 8192) -> int:
-    """Choose a V8 heap cap that fits both the host and its cgroup.
-
-    DKG snapshot recovery retains complete RDF phases in memory.  Node's
-    roughly 4 GiB default old-space cap is too small for the Blackbox graph,
-    while an unconditional 8 GiB cap is unsafe in a smaller container.  Use at
-    most 75% of the effective memory ceiling and never exceed ``default_mb``.
-    """
-    if default_mb <= 0:
-        raise ProcessLimitsError("default DKG heap must be positive")
+def effective_memory_mb() -> Optional[int]:
+    """The machine's memory ceiling in MB — the smaller of the cgroup limit and
+    physical RAM — or None when neither could be read."""
     limits = [
         value
         for value in (read_cgroup_memory_limit(), read_physical_memory())
         if value and 0 < value < _UNLIMITED_MEMORY_THRESHOLD
     ]
-    if not limits:
+    return min(limits) // (1024 * 1024) if limits else None
+
+
+def resolve_dkg_heap_mb(default_mb: int = 8192) -> int:
+    """Choose a V8 heap cap that fits both the host and its cgroup.
+
+    DKG snapshot recovery retains complete RDF phases in memory. Node's
+    roughly 4 GiB default old-space cap is too small for the Blackbox graph,
+    while an unconditional 8 GiB cap is unsafe in a smaller container. The cap
+    is HALF the effective memory, never more than ``default_mb``: the node's
+    Oxigraph store is a second process on the same machine that grows to
+    2–2.5 GB during a first sync, and a 4 GB bench whose node was allowed 75%
+    was killed by the kernel twice before the sync finished (2026-10-22).
+    """
+    if default_mb <= 0:
+        raise ProcessLimitsError("default DKG heap must be positive")
+    limit_mb = effective_memory_mb()
+    if limit_mb is None:
         return default_mb
-    limit_mb = min(limits) // (1024 * 1024)
-    sized = int(limit_mb * 0.75)
+    sized = limit_mb // 2
     if sized <= 0:
         raise ProcessLimitsError("effective memory limit is too small for DKG")
     return min(default_mb, sized)
+
+
+#: Sync transfers the node runs at once and its queue: the node's own defaults (10, 20)
+#: from SMALL_MACHINE_MB up; below that (4, 8) — every transfer in flight is store work,
+#: and on a 4 GB machine the store's peak at 10 slots was what the kernel killed.
+SYNC_SLOTS_FULL = (10, 20)
+SYNC_SLOTS_SMALL = (4, 8)
+SMALL_MACHINE_MB = 8192
+
+
+def sync_slots(memory_mb: Optional[int] = None) -> tuple[int, int]:
+    """``(max_inflight, queue_limit)`` for a machine with *memory_mb* (default:
+    this machine; unknown memory gets the node's own defaults)."""
+    limit = effective_memory_mb() if memory_mb is None else memory_mb
+    if limit is None or limit >= SMALL_MACHINE_MB:
+        return SYNC_SLOTS_FULL
+    return SYNC_SLOTS_SMALL
 
 
 def merge_node_options(node_options: str, heap_mb: int) -> str:

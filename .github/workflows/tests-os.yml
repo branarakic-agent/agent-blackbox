@@ -29,6 +29,10 @@ name: OS-specific tests
 on:
   workflow_call:
     inputs:
+      commit:
+        description: Commit to test and build. Empty keeps the triggering commit.
+        type: string
+        default: ''
       desktop_updater:
         description: >-
           Run the Windows desktop-update hand-off integration tests
@@ -66,14 +70,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: tests-os-${{ github.ref_type == 'tag' && github.run_id || github.ref }}
-  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+  group: tests-os-${{ (github.ref_type == 'tag' || inputs.commit != '') && github.run_id || github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' && inputs.commit == '' }}
 
 jobs:
   os-tests:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 60
+    timeout-minutes: ${{ matrix.timeout || 60 }}
     strategy:
       fail-fast: false
       matrix:
@@ -88,12 +92,26 @@ jobs:
             runner: macos-latest
             marker: macos
             slice: 2/2
-          - name: Windows-only tests
+          # Two slices of ONE worker each on the fork's free windows-latest (4 vCPUs): these files
+          # spawn PowerShell trees with 60 s CIM polls inside, and any neighbour on the same
+          # 4 vCPUs starves them (16 workers: 10 failures; 2 workers: three desktop-update
+          # files killed at the 300 s cap, run 38993760723). Serial on one box is ~45-55 min
+          # of subprocess wall, so the lane is halved the way the macOS rows are.
+          - name: Windows-only tests (1/2)
             runner: windows-latest
             marker: windows
+            slice: 1/2
+            timeout: 90
+          - name: Windows-only tests (2/2)
+            runner: windows-latest
+            marker: windows
+            slice: 2/2
+            timeout: 90
     steps:
       - name: Checkout code
         uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
+        with:
+          ref: ${{ inputs.commit }}
 
       # No arm64 wheels for some of the extras below: PM builds them from sdist.
       - name: Set up native ARM64 build dependencies
@@ -182,15 +200,18 @@ jobs:
             -v --tb=short
         env:
           # These files spawn nested PowerShell trees. CPU-count parallelism
-          # starves cold child startup before the fixture's idle deadline: at
-          # 16 files at a time the 4-vCPU windows-latest runner timed out 6 and
-          # then 10 different PowerShell tests (14 and 16 Oct); at 2 they pass.
-          HERMES_TEST_WORKERS: ${{ matrix.marker == 'windows' && '2' || '' }}
-          # Per-file limit, sized for this 4-vCPU runner as tests.yml sizes its Linux
-          # 4-core lane: the 300 s default is for the 96-core runner. Here
-          # test_desktop_update_windows_commit_outcome.py takes 217-285 s; on a slower
-          # runner it was killed at 301 s and the desktop-update files after it stalled.
-          HERMES_TEST_FILE_TIMEOUT: ${{ matrix.marker == 'windows' && '1200' || '' }}
+          # starves cold child startup before the fixture's idle deadline.
+          # Upstream runs 16 workers on a 32-core runner; this fork's windows-latest has
+          # 4 vCPUs, where 16 workers timed out every PowerShell child (run 38927008162)
+          # and 2 still pushed the slowest desktop-update files past the per-file cap
+          # (run 38993760723). One worker per slice keeps the box quiet.
+          HERMES_TEST_WORKERS: ${{ matrix.marker == 'windows' && '1' || '' }}
+          # The 300 s per-file cap is sized for the 32-core runner (tests.yml says the same
+          # for Linux). On this runner test_desktop_update_windows_marker.py alone has run
+          # 64 s, 302 s (killed) and 875 s across three runs with no test failing
+          # (KI-433): the cap covers the observed maximum twice over, and the row's
+          # 90-minute job budget covers a slice that holds it.
+          HERMES_TEST_FILE_TIMEOUT: ${{ matrix.marker == 'windows' && '1800' || '300' }}
           HERMES_TEST_SLICE: ${{ matrix.slice || '' }}
           # Belt-and-suspenders with tests/conftest.py's env blanking: no
           # test may reach a real provider API.
@@ -214,6 +235,7 @@ jobs:
     if: inputs.e2e_upgrade
     uses: ./.github/workflows/windows-install-update-e2e.yml
     with:
+      commit: ${{ inputs.commit }}
       strict_acceptance: ${{ inputs.strict_acceptance }}
 
   e2e-windows:
@@ -239,6 +261,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
+        with:
+          ref: ${{ inputs.commit }}
 
       - name: Set up locked Python and test dependencies
         uses: ./.github/actions/setup-pm

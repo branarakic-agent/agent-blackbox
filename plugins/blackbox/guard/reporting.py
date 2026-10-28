@@ -65,19 +65,34 @@ def _report_and_audit(cfg: BlackboxConfig, event: str, findings: list[detection.
     The community share itself runs on a background daemon thread (KI-033) —
     a slow or down node must never stall the agent's tool call. Only the
     policy decision (microseconds, no I/O) happens inline.
+
+    Sandbox mode (2026-10-21): the local finding is still recorded as real, but
+    the share fan-out runs inside :func:`audit.sandbox_run` — its cooldowns and
+    share ledger live in the sandbox folder, so a test never silences the real
+    report of the same threat — and adds no verified sighting or private KA.
     """
     finding_dicts = [f.to_dict() for f in findings]
     _attach_sightings(finding_dicts, detail)   # before recording, so the local record carries the profile too
     audit.record(event=event, findings=finding_dicts or None, detail=detail)
     if not findings:
         return
+    if cfg.community_sandbox:
+        with audit.sandbox_run():
+            _share_findings(cfg, event, finding_dicts)
+    else:
+        _share_findings(cfg, event, finding_dicts)
+
+
+def _share_findings(cfg: BlackboxConfig, event: str, finding_dicts: list[dict[str, Any]]) -> None:
+    """Per finding: cooldown, private audit KA, share-policy decision, background share."""
     client: Optional[DkgClient] = None
     try:
-        client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
-    except Exception:
+        client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home, config=cfg)
+    except Exception:   # health: allow BLE001 -- the hook boundary is fail-open: a node client that cannot be built must never break the agent's tool call (KI-033)
         client = None
     policy = community.CommunitySharePolicy(cfg)
     reporter = identity.reporter_address(client) if client is not None else None
+    real = not cfg.community_sandbox
     for finding in finding_dicts:
         # Custom rules, LLM opinions, and secret findings stay local — no private
         # KA, no sighting. Secret values must never risk reaching the shared graph.
@@ -86,7 +101,7 @@ def _report_and_audit(cfg: BlackboxConfig, event: str, findings: list[detection.
         identifier = str(finding.get("identifier") or "")
         # R2b: a VERIFIED-tier match counts in the weekly sighting tally — repeats
         # too, which the report cooldown below refuses. Community-only matches never do.
-        if finding.get("source") == "public":
+        if real and finding.get("source") == "public":
             community.record_verified_sighting(identifier)
         # Per-threat cooldown: a re-fire within the window adds no signal.
         # Stamped BEFORE the share attempt, so a failed share waits out the
@@ -94,11 +109,9 @@ def _report_and_audit(cfg: BlackboxConfig, event: str, findings: list[detection.
         # failure so it is never invisible).
         if audit.recently_reported(identifier):
             continue
-        # Private WM audit KA (observed evidence stays local). Stamp the cooldown
-        # here so it bounds the KA independently of whether a sighting is sent.
         if client is not None:
             audit.mark_reported(identifier)
-            local_graph = audit.local_audit_graph(client)   # this node's own graph — the verified one refuses writes
+            local_graph = audit.local_audit_graph(client) if real else ""   # this node's own graph
             if local_graph:
                 audit.write_private_audit_ka(client, local_graph, event, finding)
         allowed, why = policy.decide(finding, reporter)
@@ -108,3 +121,34 @@ def _report_and_audit(cfg: BlackboxConfig, event: str, findings: list[detection.
         if client is None or not audit.allow_report(cfg.daily_report_limit):
             continue
         community.spawn_community_share(client, cfg, finding, reporter)
+
+
+def blackbox_block_message(findings: list[detection.Finding]) -> str:
+    """Human-readable block message summarizing the blocking findings."""
+    lines = [
+        "Blackbox blocked this tool call — it matched "
+        f"{len(findings)} known threat{'s' if len(findings) != 1 else ''} in the threat graph:",
+        "",
+    ]
+    for f in findings:
+        lines.append(f"- [{f.severity.upper()}] {f.category}: {f.title} ({f.identifier})")
+    lines.append("")
+    lines.append(
+        "Treat the source content as untrusted. If this is a false positive, "
+        "switch Blackbox to audit mode and report the identifier to Umanitek."
+    )
+    return "\n".join(lines)
+
+def hook_failed(hook: str, exc: BaseException, *, tool_name: str = "", consequence: str) -> None:
+    """A hook raised and the host carried on (fail-open): say so at WARNING and
+    write an ``audit`` row (``event="guard_error"``) so the dashboard's activity
+    trail and the operator can see that an action went through unchecked.
+
+    Fail-open is never fail-silent: before this, a tool argument that tripped any
+    parser bug disabled the guard for that call with one DEBUG line.
+    *consequence* is the plain sentence for the log ("the action passed unchecked")."""
+    logger.warning("blackbox: %s raised %s: %s — %s", hook, type(exc).__name__, exc, consequence)
+    audit.record(event="guard_error", detail={"hook": hook, "tool_name": tool_name,
+                                              "error": type(exc).__name__, "message": str(exc)[:300],
+                                              "consequence": consequence})
+

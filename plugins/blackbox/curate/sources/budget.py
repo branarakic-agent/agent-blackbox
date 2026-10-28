@@ -23,10 +23,10 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass
-from datetime import date
-from typing import Callable, Optional, Sequence, Tuple
+from typing import Callable, Optional, Sequence
 
 from ..queue import Lane
+from ...kernel.health import days_between
 
 #: Item states (§03.3 verdicts). An ``open`` item is due every beat; the
 #: others only on their re-test days.
@@ -71,7 +71,7 @@ class LookupBudget:
         """An open item is always due; a deferred / not-proven one only on a re-test day."""
         if item.state == OPEN:
             return True
-        return _days_between(item.state_since, today) in self.retest_days
+        return days_between(item.state_since, today) in self.retest_days
 
 
 def select_for_lookup(items: Sequence[LookupItem], budget: LookupBudget, today: str) -> tuple[LookupItem, ...]:
@@ -95,11 +95,8 @@ def queue_metrics(items: Sequence[LookupItem], today: str) -> QueueMetrics:
     if not items:
         return QueueMetrics(depth=0, oldest_age_days=0)
     oldest = min(item.first_seen for item in items)
-    return QueueMetrics(depth=len(items), oldest_age_days=max(0, _days_between(oldest, today)))
+    return QueueMetrics(depth=len(items), oldest_age_days=max(0, days_between(oldest, today)))
 
-
-def _days_between(earlier: str, later: str) -> int:
-    return (date.fromisoformat(later) - date.fromisoformat(earlier)).days
 
 
 class TokenBucket:

@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from typing import Tuple
 
 from ... import community
-from ...kernel.signing.statement_order import CuratorStatement
+from ...kernel.signing import CuratorStatement
 from ..context import CurateContext, verified_identifiers
 
 
@@ -41,7 +41,7 @@ class LivePool:
 
 def read_live_pool(ctx: CurateContext) -> LivePool:
     """The confirmed pool from this node's verified reports and curator statements."""
-    graph = ctx.cfg.community_graph_id
+    graph = ctx.verified_graph
     read = community.read_verified_reports(ctx.client, ctx.cfg)
     if not read.available:
         return LivePool(unavailable=f"the community graph could not be read ({read.reason})")
@@ -62,6 +62,6 @@ def read_live_pool(ctx: CurateContext) -> LivePool:
 
 def bundle_text(ctx: CurateContext, pool: LivePool) -> str:
     """The export file for *pool*: its entries and the key manifests this node holds for the graph."""
-    graph = ctx.cfg.community_graph_id
+    graph = ctx.verified_graph
     return community.pool.Bundle(environment=ctx.environment, graph=graph,
                                  manifests=community.pool.held_manifest_texts(graph), entries=pool.entries).to_text()

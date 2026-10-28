@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Protocol
 
 from ...kernel import constants
+from ...kernel.bounded_files import atomic_write
 
 logger = logging.getLogger(__name__)
 _CANARY_FILE = "canaries.json"
@@ -87,8 +88,6 @@ class CanaryStore:
     def _save(self, planted: list[str]) -> None:
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self._path.with_name(f"{self._path.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}")
-            tmp.write_text(json.dumps({"planted": planted}), encoding="utf-8")
-            os.replace(tmp, self._path)
+            atomic_write(self._path, json.dumps({"planted": planted}))
         except OSError as exc:
             logger.warning("blackbox: could not save the canary store (%s)", exc)

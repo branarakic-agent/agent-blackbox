@@ -25,6 +25,7 @@ import threading
 from typing import Any
 
 from ..kernel import constants
+from ..kernel.bounded_files import atomic_write
 
 logger = logging.getLogger(__name__)
 
@@ -84,8 +85,6 @@ def _write_cache(graph: str) -> None:
     try:
         path = _cache_path()
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(f".tmp-{os.getpid()}")
-        tmp.write_text(json.dumps({"graph": graph}), encoding="utf-8")
-        os.replace(tmp, path)
+        atomic_write(path, json.dumps({"graph": graph}))
     except OSError as exc:   # the graph still works; it is just resolved again next time
         logger.debug("blackbox: local audit graph not cached: %s", exc)

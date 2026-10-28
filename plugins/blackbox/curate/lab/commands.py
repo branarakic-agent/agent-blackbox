@@ -32,7 +32,7 @@ from collections import Counter
 from typing import Any, Callable, Optional
 
 from ...kernel import display_safety, threat_ids
-from ..consent import ConsentLedger, confirmation_code
+from ..proposals import ConsentLedger, confirmation_code
 from .jobs import LabJobState, LabJobStore, strip_query, threat_digest
 from .trigger import LabRequests
 

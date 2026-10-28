@@ -41,6 +41,7 @@ _PROCESS_LIMITS_SPEC.loader.exec_module(process_limits)
 ProcessLimitsError = process_limits.ProcessLimitsError
 resolve_dkg_heap_mb = process_limits.resolve_dkg_heap_mb
 merge_node_options = process_limits.merge_node_options
+sync_slots = process_limits.sync_slots
 
 
 def write_limits(dkg_home: str, node_options: str, store_queue_limit: str) -> Path:
@@ -255,6 +256,9 @@ def main(argv: list[str] | None = None) -> int:
             default_mb = int(args[1]) if len(args) == 2 else 8192
             print(resolve_dkg_heap_mb(default_mb))
             return 0
+        if len(args) == 1 and args[0] == "sync-slots":
+            print(" ".join(map(str, sync_slots())))
+            return 0
         if len(args) in (2, 3) and args[0] == "node-options":
             existing = args[2] if len(args) == 3 else ""
             print(merge_node_options(existing, int(args[1])))
@@ -282,6 +286,7 @@ def main(argv: list[str] | None = None) -> int:
         "[<sync-global-max-inflight> <node-options> "
         "[<catchup-max-concurrent-peers> <store-queue-wait-timeout-ms>]]]\n"
         f"       {Path(sys.argv[0]).name} heap [<default-mb>]\n"
+        f"       {Path(sys.argv[0]).name} sync-slots\n"
         f"       {Path(sys.argv[0]).name} node-options <heap-mb> [<existing-options>]\n"
         f"       {Path(sys.argv[0]).name} write-limits <dkg-home> <node-options> <store-queue-limit>\n"
         f"       {Path(sys.argv[0]).name} commit <dkg-cli-dir>\n"

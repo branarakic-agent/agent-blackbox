@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import Callable, Dict, FrozenSet, Iterable, List, Optional, Tuple
 
 from ...kernel import constants, threat_ids
+from ...kernel.bounded_files import atomic_write
 
 logger = logging.getLogger(__name__)
 
@@ -118,9 +119,7 @@ class FirstSeenStore:
     def _save(self, seen: dict[str, float], baseline_until: float) -> None:
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self._path.with_name(f"{self._path.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}")
-            tmp.write_text(json.dumps({"baseline_until": baseline_until, "seen": seen}), encoding="utf-8")
-            os.replace(tmp, self._path)
+            atomic_write(self._path, json.dumps({"baseline_until": baseline_until, "seen": seen}))
         except OSError as exc:   # fail-open: an unwritable home only loses first-seen memory
             logger.warning("blackbox: could not save community first-seen times (%s)", exc)
 

@@ -42,6 +42,7 @@ from .. import audit
 from ..kernel import constants
 from ..kernel.dkg_client import DkgClient
 from . import keep_alive
+from ..kernel.bounded_files import atomic_write
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +72,7 @@ class PendingShare:
     """One refused share: everything needed to send it again unchanged.
 
     ``name`` is the asset name (unique per reporter and threat), ``graph`` the
-    community graph, ``quads`` the built and signed report, ``attempts`` how
+    graph it is shared to, ``quads`` the built and signed report, ``attempts`` how
     many sends have failed so far, ``first_failed`` / ``next_due`` epochs,
     ``last_error`` the sanitized reason of the latest failure.
     """
@@ -202,9 +203,7 @@ class ShareRetryQueue:
     def _save(self, pending: list[PendingShare], given_up: list[dict[str, Any]]) -> None:
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self._path.with_name(f"{self._path.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}")
-            tmp.write_text(json.dumps({"pending": [s.as_json() for s in pending], "given_up": given_up}), encoding="utf-8")
-            os.replace(tmp, self._path)
+            atomic_write(self._path, json.dumps({"pending": [s.as_json() for s in pending], "given_up": given_up}))
         except OSError as exc:   # fail-open: an unwritable home only loses the retry memory
             logger.warning("blackbox: could not save the share retry queue (%s)", exc)
 

@@ -14,10 +14,10 @@ curator role. Public entry: :func:`add_curate_parser` (wired by cli.py) and
 * :mod:`.publishing` — numbering, quorum check, consent and the write of an approved proposal.
 * :mod:`.queue` — the delta view (NEW vs ALREADY VERIFIED) and lanes.
 * :mod:`.dossier` — evidence dossier (Builder) + the ≤3-item checklist.
-* :mod:`.proposal` — proposals and their lifecycle (State) + store.
-* :mod:`.consent` — content-bound typed consent + the local ledger.
-* :mod:`.promotion` — the verified-rule write for a promoted dependency.
-* :mod:`.transport` — proposals by private point-to-point message.
+* :mod:`.proposals.proposal` — proposals and their lifecycle (State) + store.
+* :mod:`.proposals.consent` — content-bound typed consent + the local ledger.
+* :mod:`.promotion` — one community report promoted: which report, what the promotion names, the re-checks.
+* :mod:`.proposals.transport` — proposals by private point-to-point message.
 * :mod:`.intake` — watch the delta view, notify a webhook.
 * :mod:`.node_ui_views` — saved queries for the DKG node's own UI.
 * :mod:`.catalog_import` — threat-catalog import helpers (unused; kept for adoption or deletion).
@@ -26,7 +26,7 @@ curator role. Public entry: :func:`add_curate_parser` (wired by cli.py) and
 from typing import List
 
 from ..kernel.health import HealthItem
-from . import transport
+from .proposals import transport
 from .commands import cmd_curate
 from .parser import add_curate_parser
 from .service import self_test

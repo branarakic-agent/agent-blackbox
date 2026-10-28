@@ -25,7 +25,7 @@ from typing import Any, Optional, Sequence, Tuple
 
 from ...kernel import constants
 from ...kernel.signing import key_manifest
-from ...kernel.signing.trust_anchors import RootPins
+from ...kernel.signing import RootPins
 from ...kernel.sparql_text import page_rows
 from . import manifests
 

@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from typing import Dict, FrozenSet, Iterable, List, Mapping, Optional, Tuple
 
 from ...kernel import signing
-from ...kernel.signing.statement_order import CuratorStatement
+from ...kernel.signing import CuratorStatement
 from .trust_store import statement_key
 
 #: New raising statements one reader admits per day from the community authority.

@@ -624,6 +624,18 @@
   .vs-panel[data-state="syncing"] .vs-chip { border-color: var(--signal); color: var(--signal); background: var(--signal-soft); }
   .vs-panel[data-state="synced"] .vs-chip { border-color: var(--graph-mint); color: var(--graph-mint); }
   .vs-note { font-size: 13px; color: var(--muted-strong); overflow-wrap: anywhere; }
+  /* The "sit tight" line (2026-10-22): which step the sync is on, a live dot while it moves,
+     how long it has run and when it last moved. Stalled = amber, still. */
+  .vs-phase { display: flex; gap: 10px; align-items: flex-start; margin-top: 8px; padding: 8px 10px;
+    border-radius: 8px; background: var(--secure-soft); font-size: 13px; color: var(--text); overflow-wrap: anywhere; }
+  .vs-phase[hidden] { display: none; }
+  .vs-phase-dot { flex: none; width: 9px; height: 9px; margin-top: 5px; border-radius: 50%; background: var(--secure);
+    animation: vsPulse 1.6s ease-out infinite; }
+  .vs-phase-time { display: block; margin-top: 2px; font-size: 12px; color: var(--muted-strong); }
+  .vs-phase[data-phase="stalled"] { background: var(--caution-soft); }
+  .vs-phase[data-phase="stalled"] .vs-phase-dot { background: var(--caution); animation: none; }
+  @keyframes vsPulse { 0% { box-shadow: 0 0 0 0 var(--secure); } 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+  @media (prefers-reduced-motion: reduce) { .vs-phase-dot { animation: none; } }
   .vs-lookups { display: flex; align-items: baseline; gap: 8px; margin-top: 6px; font-size: 12px; color: var(--muted-strong); overflow-wrap: anywhere; }
   .vs-lookups-mark { font-weight: 700; flex: 0 0 auto; }
   .vs-lookups[data-state="live"] .vs-lookups-mark { color: var(--graph-mint); }
@@ -810,6 +822,60 @@
     border: 1px solid var(--border);
     border-radius: var(--radius);
     overflow: hidden;
+  }
+
+  /* ---------- Sandbox mode (static playground.js sets data-sandbox="on") ----------
+     A different signal colour across the whole page, a striped top edge and a fixed
+     badge, so a sandbox session can never be mistaken for the real one. */
+  :root[data-sandbox="on"] { --signal: #8B5CF6; --signal-soft: rgba(139,92,246,0.14); --sandbox: #8B5CF6; }
+  :root[data-sandbox="on"][data-theme="light"] { --signal: #6D28D9; --signal-soft: rgba(109,40,217,0.10); --sandbox: #6D28D9; }
+  :root[data-sandbox="on"] body { box-shadow: inset 0 4px 0 var(--sandbox); }
+  .pg-badge { position: fixed; right: 16px; bottom: 16px; z-index: 60; padding: 6px 12px; border-radius: 999px;
+    background: var(--sandbox, #8B5CF6); color: #fff; font: 600 12px/1.2 var(--mono, ui-monospace, monospace); letter-spacing: 0.08em; }
+  .pg-panel { margin-top: 28px; border: 1px solid var(--sandbox, #8B5CF6); border-radius: var(--radius); background: var(--panel); padding: 18px 20px; }
+  .pg-panel h2 { margin: 0 0 4px; font-size: 18px; color: var(--sandbox, #8B5CF6); }
+  .pg-panel p { margin: 0 0 12px; color: var(--muted); max-width: 72ch; }
+  .pg-kinds { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 14px; }
+  .pg-kinds button { border: 1px solid var(--sandbox, #8B5CF6); background: transparent; color: var(--text); border-radius: 8px;
+    padding: 8px 12px; font: inherit; cursor: pointer; }
+  .pg-kinds button:hover:not(:disabled) { background: var(--signal-soft); }
+  .pg-kinds button:disabled { opacity: 0.55; cursor: progress; }
+  .pg-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+  .pg-cols h3 { margin: 0 0 6px; font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-strong); }
+  .pg-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: 8px; max-height: 320px; overflow: auto; }
+  .pg-list li { padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 12px; overflow-wrap: anywhere; }
+  .pg-list li:last-child { border-bottom: 0; }
+  .pg-list .pg-id { font-family: var(--mono, ui-monospace, monospace); color: var(--text); }
+  .pg-list .pg-meta { color: var(--muted); }
+  .pg-mine { color: var(--sandbox, #8B5CF6); font-weight: 600; }
+  .pg-error { color: var(--signal); margin: 6px 0; }
+  :root[data-sandbox="on"] #tab-community::after { content: "SANDBOX"; margin-left: 8px; padding: 1px 7px; border-radius: 999px;
+    background: var(--sandbox, #8B5CF6); color: #fff; font: 700 10px/1.6 var(--mono, ui-monospace, monospace); letter-spacing: 0.12em; }
+  .pg-ribbon { position: absolute; top: 12px; left: 12px; z-index: 5; display: flex; align-items: center; gap: 10px; max-width: calc(100% - 24px);
+    padding: 8px 14px 8px 10px; border-radius: 10px; color: #fff; pointer-events: none;
+    background: repeating-linear-gradient(135deg, var(--sandbox, #8B5CF6) 0 14px, color-mix(in srgb, var(--sandbox, #8B5CF6) 82%, #000) 14px 28px);
+    box-shadow: 0 6px 24px color-mix(in srgb, var(--sandbox, #8B5CF6) 40%, transparent); }
+  .pg-ribbon[hidden] { display: none; }
+  /* Community card: is this node connected to the graph, and has its owner approved it (2026-10-21). */
+  .member-line { display: flex; flex-wrap: wrap; gap: 4px 10px; margin-top: 8px; font: 600 11px/1.4 var(--mono, ui-monospace, monospace); letter-spacing: 0.04em; }
+  .member-line[hidden] { display: none; }
+  .member-line .ml { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+  .member-line .ml.ok { color: var(--secure); }
+  .member-line .ml.wait { color: var(--caution); }
+  .member-line .ml.unk { color: var(--muted); }
+  /* Sandbox tests listed beside real findings: tagged, never counted (2026-10-21). */
+  .sb-tag { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; background: var(--sandbox, #8B5CF6);
+    color: #fff; font: 700 10px/1.5 var(--mono, ui-monospace, monospace); letter-spacing: 0.12em; vertical-align: middle; }
+  tr.is-sandbox { box-shadow: inset 3px 0 0 var(--sandbox, #8B5CF6); }
+  .pg-ribbon .pg-ribbon-mark { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: #fff;
+    color: var(--sandbox, #8B5CF6); font: 800 15px/1 var(--mono, ui-monospace, monospace); }
+  .pg-ribbon b { display: block; font: 700 12px/1.2 var(--mono, ui-monospace, monospace); letter-spacing: 0.14em; }
+  .pg-ribbon span { display: block; font-size: 11px; opacity: 0.9; }
+  /* Narrow screens: the stage's search and view controls sit at the top, so the
+     ribbon moves to the bottom-left corner, clear of the fullscreen button. */
+  @media (max-width: 720px) {
+    .pg-ribbon { top: auto; bottom: 12px; max-width: calc(100% - 72px); padding-block: 6px; }
+    .pg-ribbon span { display: none; }
   }
 
   /* ---------- Shields: the "New" banner (static/shields.js) ---------- */
@@ -2284,6 +2350,7 @@
   }
   .toast.show { opacity: 1; transform: none; }
   .toast.ok { color: var(--mint); }
+  .toast.caution { color: var(--caution); border-color: color-mix(in srgb, var(--caution) 45%, var(--border)); }
 
   /* In-app threat alert. One toast represents all findings from a poll cycle,
      preventing noisy agents from creating a wall of notifications. */
@@ -2967,6 +3034,9 @@
     <!-- Each shield's "New" banner, drawn by static/shields.js from /api/shields -->
     <div id="shield-banners"></div>
 
+    <!-- Sandbox mode's Playground, drawn by playground.js from /api/playground (shown only in sandbox mode) -->
+    <div id="playground-root" hidden></div>
+
     <!-- Connected agents -->
     <section class="section" aria-label="Connected agents">
       <div class="section-head agents-head">
@@ -3027,6 +3097,7 @@
           <div class="vs-body">
             <div class="vs-head"><h3>Verified graph sync</h3><span class="vs-chip" id="vs-chip">checking</span></div>
             <div class="vs-note" id="vs-note" aria-live="polite">Reading the node&hellip;</div>
+            <div class="vs-phase" id="vs-phase" hidden><span class="vs-phase-dot" aria-hidden="true"></span><span><span id="vs-phase-text"></span><span class="vs-phase-time" id="vs-phase-time"></span></span></div>
             <!-- DKG-lookup: WHERE each check's verified answer came from — the graph store, the opt-in
                  local index while the store is down, or nowhere (checks paused). Never silent. -->
             <div class="vs-lookups" id="vs-lookups" data-state="unknown" aria-live="polite"><span class="vs-lookups-mark" aria-hidden="true">&middot;</span><span id="vs-lookups-text">Checking&hellip;</span></div>
@@ -3144,6 +3215,7 @@
         </div>
         <div class="value" id="stat-community-count">&mdash;</div>
         <div class="meta" id="stat-community-meta">community-reported threats</div>
+        <div class="member-line" id="stat-community-member" hidden></div>
       </div>
       <div class="stat roadmap">
         <div class="label">
@@ -3276,6 +3348,7 @@
 <!-- Vendored (same-origin) force-graph UMD bundle — defines window.ForceGraph. -->
 <script src="./vendor/force-graph.min.js"></script>
 <script src="./shields.js"></script>
+<script src="./playground.js"></script>
 <script>
 (function () {
   "use strict";
@@ -3316,6 +3389,7 @@
   };
   var graphFocus = { public: null, community: null };
   var graphFocusLoadInFlight = { public: false, community: false };
+  var graphFocusPages = { public: {}, community: {} };
   var graphRenderMeta = { public: null, community: null, local: null };
   // A temporary render-only ceiling. Cached graph rows and corpus totals stay
   // intact; only the number of force-graph leaves mounted at once changes.
@@ -3333,6 +3407,12 @@
   var FINDINGS_PAGE = 10, FINDINGS_MAX = 500, findingsLoaded = FINDINGS_PAGE;
   var findingsRequestGeneration = 0;
   var findingsCache = null;
+  // Sandbox mode: this node's Playground tests (/api/playground/local). They are listed
+  // beside the real findings and in the Local tab with a SANDBOX tag, and never reach a
+  // count, the onboarding check or an alert: those read the real payloads only.
+  var sandboxLocal = null;
+  var sandboxRowsSeen = false;   // the sandbox tests present at first sight never alert
+  var SANDBOX_RING = "#8B5CF6";
   var findingsSort = "newest";   // "newest" | "severity"
 
   // Threat notifications are intentionally in-app. The first successful fetch
@@ -3464,6 +3544,7 @@
   }
 
   function tierProgress(tier) {
+    if (sandboxCommunity(tier)) return { count: graphTotalForTier(tier) || 0, state: "ready", label: "sandbox lane" };
     var p = lastStatus && lastStatus.sync_progress && lastStatus.sync_progress[tier];
     if (p && typeof p === "object") return p;
     var count = tier === "public"
@@ -3565,10 +3646,18 @@
       note.textContent = TIER_NOTE.community;
       return;
     }
-    note.textContent = TIER_NOTE[activeTier] || "";
+    note.textContent = activeTier === "public" && lastStatus && lastStatus.detection_backend === "dkg"
+      ? "Live entries from the local verified graph. Counts are graph entities; coverage may still be partial."
+      : TIER_NOTE[activeTier] || "";
   }
 
   function graphTotalForTier(tier) {
+    // Sandbox mode draws the sandbox lane: the status poll counts the REAL
+    // community tier, so the lane's own page total is the only true count.
+    if (sandboxCommunity(tier)) {
+      var lane = graphCache[tier];
+      return lane && lane.total != null ? Number(lane.total) || 0 : null;
+    }
     // /api/graph-status is the freshest cache generation. Prefer it over an
     // older page payload so a 0/partial graph is reloaded as soon as sync lands.
     var progress = lastStatus && lastStatus.sync_progress && lastStatus.sync_progress[tier];
@@ -3602,13 +3691,23 @@
       graphCache[tier].total = page.total;
       graphCache[tier].category_totals = page.category_totals || graphCache[tier].category_totals || {};
       graphCache[tier].ecosystem_totals = page.ecosystem_totals || graphCache[tier].ecosystem_totals || {};
-      graphCache[tier].partial = current.length < (Number(page.total) || current.length);
+      graphCache[tier].partial = page.backend === "dkg" ? page.partial : current.length < (Number(page.total) || current.length);
+      graphCache[tier].next_offset = page.next_offset;
     }
     graphRevision[tier] += 1;
   }
 
+  // Sandbox mode (playground.js sets window.__bbSandbox): the Community tab draws the verified
+  // graph's sandbox lane instead of its reports lane. Display only; protection is unchanged.
+  function sandboxCommunity(tier) { return tier === "community" && window.__bbSandbox === true; }
+
+  function threatUrl(tier, id) {
+    return (sandboxCommunity(tier) ? "/api/playground/threat?tier=community" : "/api/threat?tier=" + encodeURIComponent(tier)) +
+      "&identifier=" + encodeURIComponent(id || "");
+  }
+
   function graphPageUrl(tier, offset, query, limit) {
-    return "/api/graph?tier=" + encodeURIComponent(tier) +
+    return (sandboxCommunity(tier) ? "/api/playground/graph?tier=community" : "/api/graph?tier=" + encodeURIComponent(tier)) +
       "&limit=" + (limit || GRAPH_PAGE_SIZE) + "&offset=" + (offset || 0) +
       (query ? "&q=" + encodeURIComponent(query) : "");
   }
@@ -3622,6 +3721,18 @@
   function graphLoaded(tier) {
     return graphCache[tier] ? asList(graphCache[tier]).length : 0;
   }
+
+  // Drop the Community tab's cached page and draw it again from whichever lane is current
+  // (playground.js calls this when sandbox mode flips and when the sandbox lane changes).
+  window.blackboxCommunityReset = function () {
+    graphCache.community = null;
+    graphLoadInFlight.community = false;
+    graphGeneration.community += 1;
+    graphRevision.community += 1;
+    Object.keys(THREAT_CACHE).forEach(function (key) { if (key.indexOf("community|") === 0) delete THREAT_CACHE[key]; });
+    loadFindings().then(function () { if (activeTier === "local") renderGraphTab(); }, function () {});   // sandbox rows join or leave
+    return loadGraphTier("community").then(function () { if (activeTier === "community") renderGraphTab(); }, function () {});
+  };
 
   function resetEmptyGraphOnFirstVerifiedThreats(tier, previousTotal) {
     var cached = graphCache[tier];
@@ -3651,6 +3762,7 @@
     graphLoadInFlight[tier] = false;
     graphSearchInFlight[tier] = false;
     graphFocusLoadInFlight[tier] = false;
+    graphFocusPages[tier] = {};
     graphCache[tier] = null;
     graphSearchCache[tier] = null;
     graphRevision[tier] += 1;
@@ -3676,6 +3788,7 @@
   function graphHasMore(tier) {
     var data = graphCache[tier];
     if (!data) return true;
+    if (data.backend === "dkg") return !!data.partial;
     var loaded = graphLoaded(tier);
     var total = graphTotalForTier(tier);
     if (total != null && total !== loaded) return true;
@@ -3689,7 +3802,8 @@
     graphLoadInFlight[tier] = requestToken;
     var target = graphTotalForTier(tier);
     var loaded = graphLoaded(tier);
-    var offset = target != null && target >= loaded ? loaded : 0;
+    var offset = graphCache[tier] && graphCache[tier].backend === "dkg"
+      ? graphCache[tier].next_offset || 0 : target != null && target >= loaded ? loaded : 0;
     return getJSON(graphPageUrl(tier, offset)).then(function (page) {
       if (graphLoadInFlight[tier] !== requestToken || graphGeneration[tier] !== requestGeneration) return false;
       mergeGraphPage(tier, page);
@@ -3705,12 +3819,18 @@
   function loadGraphFocusPage(tier, focus) {
     if (!focus || graphFocusLoadInFlight[tier]) return Promise.resolve(false);
     var current = graphCache[tier] ? asList(graphCache[tier]) : [];
-    var offset = current.filter(function (t) { return graphMatchesFocus(t, focus); }).length;
+    var direct = lastStatus && lastStatus.detection_backend === "dkg";
+    var focusKey = graphFocusKey(focus);
+    var cursor = graphFocusPages[tier][focusKey];
+    if (direct && cursor && !cursor.partial) return Promise.resolve(false);
+    var offset = direct ? (cursor ? cursor.next_offset : 0)
+      : current.filter(function (t) { return graphMatchesFocus(t, focus); }).length;
     var requestToken = {};
     var requestGeneration = graphGeneration[tier];
     graphFocusLoadInFlight[tier] = requestToken;
     return getJSON(graphFocusPageUrl(tier, focus, offset)).then(function (page) {
       if (graphFocusLoadInFlight[tier] !== requestToken || graphGeneration[tier] !== requestGeneration) return false;
+      if (page.backend === "dkg") graphFocusPages[tier][focusKey] = page;
       var existing = graphCache[tier] || { tier: tier, threats: [], total: graphTotalForTier(tier) || 0 };
       var seen = {};
       var added = 0;
@@ -3965,10 +4085,22 @@
   }
 
   // Refine R10: the shared health items (kernel.health) — the same lines `blackbox status` prints.
+  // Health items that also pop up once when they first appear (the strip alone is easy to
+  // miss): an approved node whose approval has not reached it has every share refused.
+  var HEALTH_POPUPS = [{ match: "not admitted to the community graph", seen: false }];
+  function popUpNewHealth(items) {
+    HEALTH_POPUPS.forEach(function (popup) {
+      var hit = items.filter(function (it) { return String(it.message || "").indexOf(popup.match) >= 0; })[0];
+      if (hit && !popup.seen) showToast("Community: " + hit.message + " \u2014 " + hit.what_to_do, "caution", 12000);
+      popup.seen = !!hit;
+    });
+  }
+
   function renderHealth(data) {
     var strip = $("health-strip");
     if (!strip) return;
     var items = (data && Array.isArray(data.items)) ? data.items : [];
+    popUpNewHealth(items);
     strip.innerHTML = items.map(function (it) {
       return '<div class="health-item' + (it.red ? ' red' : '') + '">' +
         '<span class="h-class">' + esc(it["class"]) + '</span>' + esc(it.message) +
@@ -4006,6 +4138,29 @@
     return "Everything is downloaded \u2014 turning the last assets into rules" + checked + ".";
   }
 
+  // The step the sync is on (server's sync_phase) with how long it has run and when its
+  // counts last moved. Optional fields: an older daemon omits them and the line stays hidden.
+  function vsMinutes(seconds) {
+    var minutes = Math.max(0, Math.round(seconds / 60));
+    return minutes < 1 ? "under a minute" : minutes + " min";
+  }
+  function renderSyncPhase(m) {
+    var line = document.getElementById("vs-phase");
+    if (!line) return;
+    var phase = m.phase || "";
+    line.hidden = !phase || phase === "synced" || !m.phase_text;
+    if (line.hidden) return;
+    line.setAttribute("data-phase", phase);
+    vsSet("vs-phase-text", m.phase_text);
+    var now = Date.now() / 1000, parts = [];
+    if (typeof m.running_since === "number") parts.push("running " + vsMinutes(now - m.running_since));
+    if (typeof m.last_progress === "number") {
+      var ago = now - m.last_progress;
+      parts.push(ago < 60 ? "last moved just now" : "last moved " + vsMinutes(ago) + " ago");
+    }
+    vsSet("vs-phase-time", parts.join(" \u00b7 "));
+  }
+
   function renderSyncMeter(m) {
     var panel = document.getElementById("vs-panel");
     if (!panel || !m) return;
@@ -4017,6 +4172,7 @@
       ? "Verified threat graph sync progress unknown" : pct + "% of the verified threat graph compiled into rules");
     vsSet("vs-chip", VS_STATE_TEXT[m.state] || m.state);
     vsSet("vs-note", vsNote(m));
+    renderSyncPhase(m);
     renderLookups(m.lookups);
     vsBar("downloaded", m.downloaded_assets, m.percent_downloaded, m.graph_assets);
     vsBar("compiled", m.compiled_assets, m.percent_compiled, m.graph_assets);
@@ -4043,13 +4199,49 @@
     return getJSON("/api/verified-sync").then(renderSyncMeter, function () {});
   }
 
-  // The two summary tiles, from /api/community-stats.
+  // Connected? Approved? One mark each (check / waiting / unknown), the full sentence on hover.
+  // Both fields are optional: an older daemon omits them and the line stays hidden (LES-018).
+  var JOIN_MARKS = { joined: ["ok", "\u2713 connected"], "awaiting-definition": ["wait", "\u25F7 connecting"],
+                     joining: ["wait", "\u25F7 connecting"], unknown: ["unk", "? connection"] };
+  var ADMISSION_MARKS = { owner: ["ok", "\u2713 graph owner"], approved: ["ok", "\u2713 approved"],
+                          open: ["ok", "\u2713 open graph"], waiting: ["wait", "\u25F7 awaiting approval"],
+                          unknown: ["unk", "? approval"] };
+  function renderMemberLine(s) {
+    var line = $("stat-community-member");
+    if (!line) return;
+    var join = JOIN_MARKS[s.join_state], admission = ADMISSION_MARKS[s.admission];
+    line.hidden = !join && !admission;
+    if (line.hidden) return;
+    function mark(entry, text) {
+      return entry ? '<span class="ml ' + entry[0] + '" title="' + esc(text || "") + '">' + esc(entry[1]) + '</span>' : "";
+    }
+    line.innerHTML = mark(join, s.join_text) + mark(admission, s.admission_text);
+  }
+
+  // The two summary tiles, from /api/community-stats. In sandbox mode the Community tile
+  // counts what the graph above it draws, the sandbox lane (window.__bbSandboxLane, set by
+  // playground.js), and says so; the real counts return the moment sandbox mode is off.
+  var lastCommunityStats = null;
+  window.blackboxRenderCommunityCard = function () { if (lastCommunityStats) renderCommunityStats(lastCommunityStats); };
+  function renderSandboxCommunityTile() {
+    var lane = window.__bbSandbox === true ? window.__bbSandboxLane : null;
+    if (!lane) return false;
+    $("stat-community-count").textContent = num(lane.threats);
+    var tile = $("stat-community-meta");
+    tile.textContent = "sandbox lane \u00b7 " + num(lane.agents) + " agent" + (lane.agents === 1 ? "" : "s") +
+      " heard \u00b7 tests only, never a flag";
+    tile.title = "Sandbox mode: this tile counts the verified graph's sandbox lane, like the graph above.";
+    return true;
+  }
+
   function renderCommunityStats(s) {
+    lastCommunityStats = s;
     if (!s || !s.configured) {
       $("stat-community-count").textContent = "off";
       $("stat-community-meta").textContent = "no community graph configured";
       $("stat-sharing-state").textContent = "off";
       $("stat-sharing-meta").textContent = "outbound threat sharing";
+      renderMemberLine({});
       return;
     }
     var sharing = s.paused ? "paused" : (s.sharing_enabled ? "on" : "off");
@@ -4064,6 +4256,8 @@
     tile.title = (s.graph_id ? "Community graph " + s.graph_id + ". " : "") +
       "Threats other Blackbox agents reported. They flag for you and never block.";
     $("stat-community-count").textContent = num(s.community_threats || 0);
+    renderSandboxCommunityTile();   // sandbox mode: count the lane the graph draws instead
+    renderMemberLine(s);
     $("stat-sharing-state").textContent = sharing;
     var last = s.last_share;
     $("stat-sharing-meta").textContent = last
@@ -4575,7 +4769,8 @@
       source: t.source, confirmed: !!t.confirmed,
       tool_name: t.tool || "", framework: (s && s.agent) || "hermes",
       ts: t.ts || 0, profile: t.profile || {}, decision: t.decision || "",
-      evidence: t.evidence || "", context: t.context || null, found_in: t.found_in || ""
+      evidence: t.evidence || "", context: t.context || null, found_in: t.found_in || "",
+      sandbox: !!t.sandbox
     };
   }
 
@@ -4601,7 +4796,8 @@
         (ev.threats || []).forEach(function (t) {
           // The rule id AND its title: one wallet-vault rule serves every wallet and names it
           // only in the title, so two wallets must not fold into one bubble.
-          var key = t.identifier ? t.identifier + "|" + (t.title || "") : ((t.title || "threat") + ":" + (t.ts || 0));
+          var key = (t.sandbox ? "sandbox|" : "") +   // a test never folds into the real bubble of the same threat
+            (t.identifier ? t.identifier + "|" + (t.title || "") : ((t.title || "threat") + ":" + (t.ts || 0)));
           var item = byId[key];
           if (!item) { item = byId[key] = { t: t, s: s, ev: ev, count: 0, first: t.ts || 0, all: [] }; order.push(key); }
           item.count += 1;
@@ -4613,7 +4809,8 @@
     });
     nodes.push({
       id: centerId, kind: "center", label: "Local", color: MINT, val: 26,
-      sessionCount: sessions.length, threatTotal: order.length,   // different threats, not sightings
+      sessionCount: sessions.length,
+      threatTotal: order.filter(function (key) { return !byId[key].t.sandbox; }).length,   // different REAL threats, not sightings
       sightingTotal: (data && data.threatCount) || 0,
       start: spanStart, end: spanEnd
     });
@@ -4629,7 +4826,10 @@
       var hubId = "__lcat__:" + ck;
       // count = different threats of this type (two wallets' vaults are two); how often each was
       // seen belongs to that threat, so the total sightings only appear in the hover card.
-      nodes.push({ id: hubId, kind: "hub", cat: ck, label: meta.name, count: items.length, sightings: sightings, color: meta.color,
+      // count = REAL threats only; sandbox tests (sandbox mode) are their own number, drawn as "+ N TESTS".
+      var sandboxItems = items.filter(function (it) { return it.t.sandbox; }).length;
+      nodes.push({ id: hubId, kind: "hub", cat: ck, label: meta.name, count: items.length - sandboxItems,
+                   sandboxCount: sandboxItems, sightings: sightings, color: meta.color,
                    val: 13 + Math.min(19, Math.log(items.length + 1) * 3.2),
                    // Every local threat of this type (newest first), for the type's detail window.
                    localItems: items.map(function (it) {
@@ -4645,8 +4845,8 @@
         finding.firstSeen = it.first;
         nodes.push({
           id: hubId + ":" + i, kind: "lthreat", cat: ck,
-          label: clip(t.title || t.identifier || "Threat", 22) + (it.count > 1 ? " ×" + it.count : ""),
-          color: meta.color, ring: SEV_COLOR[tsev] || SEV_COLOR.info,
+          label: (t.sandbox ? "S · " : "") + clip(t.title || t.identifier || "Threat", 22) + (it.count > 1 ? " ×" + it.count : ""),
+          color: meta.color, ring: t.sandbox ? SANDBOX_RING : (SEV_COLOR[tsev] || SEV_COLOR.info),
           severity: tsev, identifier: t.identifier || "", name: t.title || "",
           tool: t.tool || it.ev.tool || "", ts: t.ts || it.ev.ts || 0,
           sightings: it.count, profile: t.profile || {}, finding: finding, val: 5
@@ -4670,7 +4870,7 @@
       finding.sightings = 1;
       nodes.push({
         id: threatId + ":s" + j, kind: "lsight", cat: ck, color: meta.color,
-        ring: SEV_COLOR[sevClass(one.t.severity)] || SEV_COLOR.info,
+        ring: one.t.sandbox ? SANDBOX_RING : (SEV_COLOR[sevClass(one.t.severity)] || SEV_COLOR.info),
         name: one.t.title || one.t.identifier || "Threat", ts: one.t.ts || one.ev.ts || 0,
         outcome: one.t.decision === "block" ? "blocked" : "flagged",
         session: (one.s && (one.s.shortId || one.s.id)) || "", finding: finding, val: 2.6
@@ -4943,7 +5143,8 @@
       var cy = ty + fontPx + 2 / labelScale;
       ctx.font = "700 " + ((screenFontPx + 1.2) / labelScale) + "px 'IBM Plex Mono', ui-monospace, monospace";
       var magnitude = isHub ? node.count : node.threatTotal;
-      var cstr = magnitude.toLocaleString() + " THREAT" + (magnitude === 1 ? "" : "S");
+      var cstr = magnitude.toLocaleString() + " THREAT" + (magnitude === 1 ? "" : "S") +
+        (isHub && node.sandboxCount ? " + " + node.sandboxCount.toLocaleString() + " TEST" + (node.sandboxCount === 1 ? "" : "S") : "");
       ctx.fillStyle = GRAPH_LABEL_SHADOW;
       ctx.fillText(cstr, node.x + 0.4 / scale, cy + 0.4 / scale);
       ctx.fillStyle = isCenter ? MINT : node.color;
@@ -4979,7 +5180,8 @@
 	        var action = graphDetailMode[activeTier] === "explore" ? "click to focus" : "click for details";
 	        var hc = node.count != null
 	          ? (node.count.toLocaleString() + ' threat' + (node.count === 1 ? '' : 's') +
-	             (node.sightings && node.sightings !== node.count ? ' · seen ' + num(node.sightings) + ' times in all' : '') + ' · ' + action)
+	             (node.sandboxCount ? ' · plus ' + num(node.sandboxCount) + ' sandbox test' + (node.sandboxCount === 1 ? '' : 's') :
+	              (node.sightings && node.sightings !== node.count ? ' · seen ' + num(node.sightings) + ' times in all' : '')) + ' · ' + action)
 	          : 'category hub';
 	        return '<div class="graph-tip"><div class="t-name">' + esc(node.label) + '</div>' +
 	          '<div class="t-cat">' + hc + '</div></div>';
@@ -5595,8 +5797,7 @@
     $("tm-body").innerHTML =
       '<div class="m-sk" style="width:92%"></div><div class="m-sk" style="width:78%"></div>' +
       '<div class="m-sk" style="width:64%;margin-top:20px"></div><div class="m-sk" style="width:72%"></div>';
-    var url = "/api/threat?tier=" + encodeURIComponent(activeTier) +
-      "&identifier=" + encodeURIComponent(node.identifier || "");
+    var url = threatUrl(activeTier, node.identifier);
     getJSON(url).then(function (d) {
       THREAT_CACHE[ckey] = d || {};
       if (!TM.node || TM.node.identifier !== node.identifier) return; // user moved on
@@ -5634,7 +5835,8 @@
     var sm = SRC_META[sk];
     return '<span class="pill ' + sev + '">' + esc(sev) + '</span>' +
       '<span class="m-tag" style="color:' + meta.color + '">' + esc(meta.name) + '</span>' +
-      '<span class="src-badge ' + sk + '" title="' + esc(sm.tip) + '">' + esc(sm.label) + '</span>';
+      '<span class="src-badge ' + sk + '" title="' + esc(sm.tip) + '">' + esc(sm.label) + '</span>' +
+      (f.sandbox ? '<span class="sb-tag">SANDBOX TEST</span>' : '');
   }
 
   // What Blackbox itself recorded for this row — painted instantly, no fetch.
@@ -5795,7 +5997,7 @@
         lookup(i + 1);
       };
       if (THREAT_CACHE[ckey]) { handle(THREAT_CACHE[ckey]); return; }
-      getJSON("/api/threat?tier=" + encodeURIComponent(tier) + "&identifier=" + encodeURIComponent(id))
+      getJSON(threatUrl(tier, id))
         .then(function (d) { THREAT_CACHE[ckey] = d || {}; handle(d); })
         .catch(function () { lookup(i + 1); });   // base facts are already on screen
       };
@@ -6177,7 +6379,7 @@
         // Local is this machine's own log (fetched fast): loader only until the
         // first payload lands, then the real count even when it's 0.
         if (localCache == null) { if (!showsLoader(lel)) lel.innerHTML = LOADER_HTML; }
-        else lel.textContent = localCache.threatCount || 0;
+        else lel.textContent = localViewData().threatCount || 0;   // sandbox mode: tests counted too
         return;
       }
       // ``setCount`` keeps the latest committed number and adds the loader
@@ -6206,7 +6408,7 @@
 
     // Every tier — including local — renders through the one force-graph stage.
     var isLocal = activeTier === "local";
-    var data = isLocal ? localCache : graphViewData(activeTier);
+    var data = isLocal ? localViewData() : graphViewData(activeTier);
 
     // still loading this tier
     if (data == null) {
@@ -6503,9 +6705,9 @@
     copy.className = "threat-toast-copy";
     var title = document.createElement("div");
     title.className = "threat-toast-title";
-    title.textContent = fresh.length === 1
+    title.textContent = (fresh.every(function (f) { return f.sandbox; }) ? "SANDBOX TEST · " : "") + (fresh.length === 1
       ? highest.charAt(0).toUpperCase() + highest.slice(1) + " threat detected"
-      : fresh.length + " new threats detected";
+      : fresh.length + " new threats detected");
     var detail = document.createElement("div");
     detail.className = "threat-toast-detail";
     detail.textContent = fresh.length === 1
@@ -6623,12 +6825,12 @@
   // data-idx maps the row back to its object in findingsRendered/auditRendered.
   function findingRowHTML(f, i) {
     var sev = sevClass(f.severity);
-    return '<tr class="row-link" data-idx="' + i + '" tabindex="0" role="button" ' +
+    return '<tr class="row-link' + (f.sandbox ? ' is-sandbox' : '') + '" data-idx="' + i + '" tabindex="0" role="button" ' +
       'aria-label="' + esc("View details: " + (f.title || f.evidence || "finding")) + '">' +
       '<td class="col-time">' + fmtTime(f.time || f.ts || f.timestamp) + '</td>' +
       '<td>' + agentTag(f.framework) + '</td>' +
       '<td><span class="pill ' + sev + '">' + esc(sev) + '</span></td>' +
-      '<td>' + shieldsUI.findingMark(f) + typeTag(f.category || f.type) + '</td>' +
+      '<td>' + shieldsUI.findingMark(f) + typeTag(f.category || f.type) + (f.sandbox ? ' <span class="sb-tag">SANDBOX</span>' : '') + '</td>' +
       '<td>' + reasonCell(f) + '</td>' +
     '</tr>';
   }
@@ -6771,7 +6973,8 @@
       }
       if (detail.duration_ms != null) bits2.push(fmtDuration(detail.duration_ms));
       if (entry.findingCount) bits2.push(entry.findingCount + ' finding' + (entry.findingCount === 1 ? '' : 's'));
-      if (detail.session_id) bits2.push('session ' + esc(String(detail.session_id).slice(-6)));
+      if (entry.sandbox) bits2.push('sandbox test');   // the Playground's session id, not a real session
+      else if (detail.session_id) bits2.push('session ' + esc(String(detail.session_id).slice(-6)));
       meta = bits2.join(" · ");
     } else if (ev === "pre_api_request") {
       primary = esc(detail.model || detail.provider || "API request");
@@ -6830,7 +7033,8 @@
       fwIcon(fw) +
       '<span>' + esc(fwLabel(fw)) + '</span>' +
       '</span>';
-    var eventCell = '<span class="au-event ev-' + grp + '">' + esc(evtLabel(entry.event)) + '</span>';
+    var eventCell = '<span class="au-event ev-' + grp + '">' + esc(evtLabel(entry.event)) + '</span>' +
+      (entry.sandbox ? ' <span class="sb-tag">SANDBOX</span>' : '');
     return '<tr class="' + (isThreat ? "threat-row" : "") + '" data-idx="' + idx + '">' +
       '<td>' + fmtTime(entry.ts, entry.iso) + '</td>' +
       '<td>' + agentCell + '</td>' +
@@ -6839,10 +7043,18 @@
     '</tr>';
   }
 
+  // In sandbox mode, the Playground's own activity (tests) merged into Agent activity, tagged.
+  function sandboxAuditEntries() {
+    if (window.__bbSandbox !== true || !sandboxLocal) return [];
+    return asList(sandboxLocal.audit).map(function (e) { return Object.assign({}, e, { sandbox: true }); });
+  }
+
   function renderAuditTrail(data) {
     if (data !== undefined) activityCache = data;
     data = activityCache;
-    var entries = (data && Array.isArray(data.entries)) ? data.entries : [];
+    var sandboxEntries = sandboxAuditEntries();
+    var entries = ((data && Array.isArray(data.entries)) ? data.entries : []).concat(sandboxEntries)
+      .sort(function (a, b) { return (Number(b.ts) || 0) - (Number(a.ts) || 0); });
     toolCmdById = {};
     entries.forEach(function (e) {
       var det = e && e.detail;
@@ -6854,7 +7066,7 @@
     var filtered = (activityFilter === "threats")
       ? entries.filter(function (e) { return e.event === "flagged" || e.event === "blocked"; })
       : entries;
-    var total = (data && data.total != null) ? data.total : entries.length;
+    var total = ((data && data.total != null) ? data.total + sandboxEntries.length : entries.length);   // sandbox rows counted
     var body = $("audit-body");
     if (!body) return;
 
@@ -7039,32 +7251,83 @@
     var findingsPanel = $("findings-panel");
     var findingsSortControl = $("findings-sort-control");
     var findingsFoot = $("findings-foot");
-    var showOnboarding = openCount === 0;
+    var sandboxRows = sandboxFindingRows();
+    var showOnboarding = openCount === 0 && !sandboxRows.length;
     if (onboarding) onboarding.hidden = !showOnboarding;
     if (findingsPanel) findingsPanel.hidden = showOnboarding;
     if (findingsSortControl) findingsSortControl.hidden = showOnboarding;
     if (findingsFoot) findingsFoot.hidden = showOnboarding;
     if (showOnboarding) checkFirstDetectionReadiness();
 
-    if (!list.length) {
+    if (!list.length && !sandboxRows.length) {
       findingsRendered = [];
       if (!showOnboarding) body.innerHTML = emptyRow("No findings available", "Blackbox is watching.", 5);
       return;
     }
 
-    findingsRendered = sortedFindings(list);
+    // The real list arrives newest-first; the sandbox tests are woven in by time so "Newest" stays true.
+    var display = sandboxRows.length
+      ? list.concat(sandboxRows).map(function (f, i) { return { f: f, i: i }; })
+          .sort(function (a, b) { return (findingTime(b.f) - findingTime(a.f)) || (a.i - b.i); })
+          .map(function (o) { return o.f; })
+      : list;
+    findingsRendered = sortedFindings(display);
     body.innerHTML = findingsRendered.map(findingRowHTML).join("");
     var shown = $("findings-shown");
-    if (shown) shown.textContent = "Showing " + list.length + " of " + openCount;
+    if (shown) shown.textContent = "Showing " + list.length + " of " + openCount +
+      (sandboxRows.length ? " · plus " + sandboxRows.length + " sandbox test" + (sandboxRows.length === 1 ? "" : "s") : "");
     var more = $("findings-more");
     if (more) more.hidden = !(list.length < openCount && findingsLoaded < FINDINGS_MAX);
+  }
+
+  function loadSandboxLocal() {
+    if (window.__bbSandbox !== true) { sandboxLocal = null; return Promise.resolve(null); }
+    return getJSON("/api/playground/local").then(function (data) {
+      sandboxLocal = data && data.sandbox ? data : null;
+      return sandboxLocal;
+    }, function () { return null; });   // fail-open: the real rows still render
+  }
+
+  function sandboxFindingRows() {
+    if (window.__bbSandbox !== true || !sandboxLocal) return [];
+    return asList(sandboxLocal.findings).map(function (f) { return Object.assign({}, f, { sandbox: true }); });
+  }
+
+  // The Local tab's data: the real activity, plus (in sandbox mode) the sandbox sessions with
+  // every threat marked. In sandbox mode the count includes the tests, so the tab counts what it
+  // draws (Amos, 2026-10-27); out of sandbox mode it is the real count alone.
+  function localViewData() {
+    var tests = window.__bbSandbox === true && sandboxLocal && sandboxLocal.local;
+    if (!tests || !(tests.sessions || []).length) return localCache;
+    var real = localCache || { sessions: [], sessionCount: 0, threatCount: 0 };
+    var marked = tests.sessions.map(function (session) {
+      return Object.assign({}, session, {
+        id: "sandbox:" + (session.id || ""), agent: session.agent || "sandbox",
+        events: (session.events || []).map(function (ev) {
+          return Object.assign({}, ev, { threats: (ev.threats || []).map(function (t) { return Object.assign({}, t, { sandbox: true }); }) });
+        })
+      });
+    });
+    return Object.assign({}, real, { sessions: (real.sessions || []).concat(marked),
+      threatCount: (real.threatCount || 0) + (tests.threatCount || 0) });
   }
 
   function loadFindings() {
     var requestGeneration = ++findingsRequestGeneration;
     return getJSON("/api/findings?limit=" + findingsLoaded + "&offset=0").then(function (data) {
+      return loadSandboxLocal().then(function () { return data; });
+    }).then(function (data) {
       if (requestGeneration !== findingsRequestGeneration) return null;
-      processThreatNotifications(data);
+      // Sandbox tests alert the way real findings do (tagged SANDBOX in the toast); the
+      // unread count and the findings counts stay the real ones' business otherwise.
+      var sandboxRows = sandboxFindingRows();
+      // The first time sandbox rows arrive (the mode is learned a moment after the first poll),
+      // the tests already there are known, not new — only tests run from now on alert.
+      if (sandboxRows.length && !sandboxRowsSeen && knownFindingKeys !== null) {
+        sandboxRows.forEach(function (f) { var key = findingNotificationKey(f); knownFindingKeys.add(key); knownFindingOrder.push(key); });
+      }
+      if (sandboxRows.length) sandboxRowsSeen = true;
+      processThreatNotifications(asList(data).concat(sandboxRows));
       renderFindings(data);
       return data;
     });
@@ -7487,7 +7750,7 @@
     SET_CATS.forEach(function (c) { cats[c.key] = { enabled: true, min_severity: "info" }; });
     return {
       mode: "audit", block_severity: "critical",
-      report: false, report_min_severity: "high",
+      report: false, report_min_severity: "high", community_sandbox: false,
       discover: true, osv_lookup: true,
       categories: cats, protected_paths: [],
       category_labels: {}
@@ -7502,6 +7765,7 @@
     out.block_severity = sevOk(data.block_severity || "critical");
     out.report_min_severity = sevOk(data.report_min_severity || "high");
     out.report = data.report === true;
+    out.community_sandbox = data.community_sandbox === true;
     out.discover = data.discover !== false;
     out.osv_lookup = data.osv_lookup !== false;
     var cats = (data.categories && typeof data.categories === "object") ? data.categories : {};
@@ -7623,6 +7887,7 @@
     $("set-discover").checked = !!setState.discover;
     $("set-osv").checked = !!setState.osv_lookup;
     if ($("set-report")) $("set-report").checked = !!setState.report;
+    if ($("set-sandbox")) $("set-sandbox").checked = !!setState.community_sandbox;
   }
 
   function renderAllSettings() {
@@ -7662,6 +7927,7 @@
       discover: !!setState.discover,
       osv_lookup: !!setState.osv_lookup,
       report: !!setState.report,
+      community_sandbox: !!setState.community_sandbox,
       categories: cats,
       protected_paths: setState.protected_paths.slice(0, 100),
       shields: shieldsUI.settings.payload()   // only the shields the settings view carried
@@ -7724,6 +7990,7 @@
         // refresh in-memory settings from the server's authoritative view
         if (result.settings) { setState = normalizeSettings(result.settings); shieldsUI.settings.load(result.settings.shields); }
         renderAllSettings();
+        if (window.blackboxPlayground) window.blackboxPlayground.refresh();   // sandbox theme + panel follow the save
         setStatus("");
         closeSettings();
         showToast("Changes saved successfully.", "ok");
@@ -7870,6 +8137,9 @@
     });
     if ($("set-report")) $("set-report").addEventListener("change", function () {
       if (!setState) return; setState.report = this.checked; markDirty();
+    });
+    if ($("set-sandbox")) $("set-sandbox").addEventListener("change", function () {
+      if (!setState) return; setState.community_sandbox = this.checked; markDirty();
     });
 
     // protected-paths add (button + Enter)
@@ -8024,7 +8294,7 @@
     else openChat();
   }
   var toastTimer = null;
-  function showToast(message, kind) {
+  function showToast(message, kind, durationMs) {
     var toast = $("toast");
     if (!toast) return;
     toast.textContent = message || "";
@@ -8032,7 +8302,7 @@
     if (toastTimer) clearTimeout(toastTimer);
     toastTimer = setTimeout(function () {
       toast.className = "toast " + (kind || "ok");
-    }, 3200);
+    }, durationMs || 3200);
   }
   function setChatBusy(busy) {
     chatBusy = !!busy;
@@ -8315,6 +8585,15 @@
           </div>
           <div class="set-rc">
             <label class="set-toggle"><input type="checkbox" id="set-report" /><span class="set-track"></span></label>
+          </div>
+        </div>
+        <div class="set-row">
+          <div class="set-rl">
+            <div class="set-rt">Sandbox mode</div>
+            <div class="set-rh">Test community sharing without consequences. While on, every share goes to the graph's sandbox lane, which no rule or flag on any machine ever reads, and the Playground on the main page lets you send listed threats through the real check and watch other members receive them. The dashboard turns violet while it is on. Switch it off and the very next finding is real again. Needs Community sharing on.</div>
+          </div>
+          <div class="set-rc">
+            <label class="set-toggle"><input type="checkbox" id="set-sandbox" /><span class="set-track"></span></label>
           </div>
         </div>
         <div class="set-row">

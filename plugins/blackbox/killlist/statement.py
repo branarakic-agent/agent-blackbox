@@ -37,7 +37,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from ..kernel import constants, rdf_terms, signing, sparql_text
 from ..kernel.dkg_client import extract_binding
-from ..kernel.signing.key_manifest import KeyManifest
+from ..kernel.signing import KeyManifest
 
 KILL_LIST_STATEMENT = "blackbox.kill-list"
 #: The graph type of a kill-list asset (a curator statement vocabulary term).

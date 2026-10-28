@@ -78,11 +78,17 @@ BLACKBOX_DKG_ACCEPT_STORE_RESET=false
 BLACKBOX_DKG_HOME="$BLACKBOX_INSTALL_ROOT/.dkg"
 BLACKBOX_DKG_CLI_DIR="$BLACKBOX_INSTALL_ROOT/dkg"
 BLACKBOX_DKG_BIN="$BLACKBOX_DKG_CLI_DIR/node_modules/.bin/dkg"
-BLACKBOX_DKG_PACKAGE="${BLACKBOX_DKG_PACKAGE:-@origintrail-official/dkg@latest}"
-# The npm integrity hash BLACKBOX_DKG_PACKAGE must have ("sha512-…"); empty = not checked.
-# `hermes blackbox setup` pins an exact version and its hash (Hermes plugin catalog: a
-# download made at setup comes from the official source, pinned by checksum).
+# The DKG node release this Blackbox installs and the sha512 the downloaded package must
+# have (`npm view <package> dist.integrity`). The hash is checked on the tarball npm will
+# install, never on the registry's own claim about it. Another BLACKBOX_DKG_PACKAGE needs
+# its own BLACKBOX_DKG_INTEGRITY, or BLACKBOX_DKG_INTEGRITY=unpinned to skip the check knowingly.
+BLACKBOX_DKG_DEFAULT_PACKAGE="@origintrail-official/dkg@10.0.26"
+BLACKBOX_DKG_DEFAULT_INTEGRITY="sha512-QlCW/5UvL2UHaR2QGAemQzvu+ZtBKfefwuitoX2hGr/XZAgkFXsln1NHitzftQM99qTrlKBq8CFfDSfDFAbMHg=="
+BLACKBOX_DKG_PACKAGE="${BLACKBOX_DKG_PACKAGE:-$BLACKBOX_DKG_DEFAULT_PACKAGE}"
 BLACKBOX_DKG_INTEGRITY="${BLACKBOX_DKG_INTEGRITY:-}"
+if [ -z "$BLACKBOX_DKG_INTEGRITY" ] && [ "$BLACKBOX_DKG_PACKAGE" = "$BLACKBOX_DKG_DEFAULT_PACKAGE" ]; then
+    BLACKBOX_DKG_INTEGRITY="$BLACKBOX_DKG_DEFAULT_INTEGRITY"
+fi
 # Packages whose install scripts the DKG node needs (its sqlite runtime check, the better-sqlite3
 # native build, a postinstall). Older npm ran every install script; npm 12 runs only those the
 # project's package.json lists under "allowScripts" (its --allow-scripts flag is refused for a
@@ -91,8 +97,12 @@ BLACKBOX_DKG_ALLOW_SCRIPTS=(@origintrail-official/dkg better-sqlite3 @openuidev/
 BLACKBOX_DKG_DAEMON_URL="http://127.0.0.1:$BLACKBOX_DKG_PORT"
 BLACKBOX_DKG_STORE_QUEUE_LIMIT="${BLACKBOX_DKG_STORE_QUEUE_LIMIT:-512}"
 BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION="${BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION:-1}"
-BLACKBOX_DKG_SYNC_GLOBAL_MAX_INFLIGHT="1"
-BLACKBOX_DKG_SYNC_GLOBAL_QUEUE_LIMIT="1"
+# The node's own sync defaults (DKG 10.0.25: 10 sync jobs, queue 20), so verified data and community
+# data sync side by side. Was 1/0 from the original installer; with one slot the community catch-ups
+# starved the verified download (bench 2026-10-22: 10 slots, community on from the start, full graph
+# in about 30 min with no deferrals and no store recovery).
+BLACKBOX_DKG_SYNC_GLOBAL_MAX_INFLIGHT="10"
+BLACKBOX_DKG_SYNC_GLOBAL_QUEUE_LIMIT="20"
 BLACKBOX_DKG_DURABLE_SYNC_ENABLED="${BLACKBOX_DKG_DURABLE_SYNC_ENABLED:-1}"
 BLACKBOX_DKG_CATCHUP_MAX_CONCURRENT_PEERS="1"
 BLACKBOX_DKG_STORE_QUEUE_WAIT_TIMEOUT_MS="300000"
@@ -111,11 +121,6 @@ NVM_INSTALL_SHA256="2d8359a64a3cb07c02389ad88ceecd43f2fa469c06104f92f98df5b6f315
 BLACKBOX_DEFAULT_CONTEXT_GRAPH_ID="0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox-vm"
 BLACKBOX_CONTEXT_GRAPH_ID="${BLACKBOX_CONTEXT_GRAPH_ID:-$BLACKBOX_DEFAULT_CONTEXT_GRAPH_ID}"
 BLACKBOX_GRAPH_PEER_ID="${BLACKBOX_GRAPH_PEER_ID:-12D3KooWBJskzr2unXQG9mR3LRZFUJoxWr1PN6hTbyWyKndHXjZM}"
-# Community graph + the peer id of the node that OWNS it (its read authority).
-# Set as a PAIR: an unregistered public graph cannot be found by a fresh node
-# until it is connected to the owner (KI-216). Empty = community layer dormant.
-BLACKBOX_COMMUNITY_GRAPH_ID="${BLACKBOX_COMMUNITY_GRAPH_ID:-}"
-BLACKBOX_COMMUNITY_GRAPH_PEER_ID="${BLACKBOX_COMMUNITY_GRAPH_PEER_ID:-}"
 BLACKBOX_DKG_CATCHUP_TIMEOUT="${BLACKBOX_DKG_CATCHUP_TIMEOUT:-3600}"
 BLACKBOX_LLM_PROVIDER="${BLACKBOX_LLM_PROVIDER:-}"
 BLACKBOX_LLM_MODEL="${BLACKBOX_LLM_MODEL:-}"
@@ -126,9 +131,6 @@ BLACKBOX_AUTO_DASHBOARD="${BLACKBOX_AUTO_DASHBOARD:-1}"
 BLACKBOX_SYNC_MODE="${BLACKBOX_SYNC_MODE:-wait}" # retained for compatibility; sync is controlled
 BLACKBOX_INSTALL_INCOMPLETE=false
 BLACKBOX_THREAT_GRAPH_INCOMPLETE=false
-BLACKBOX_PARTIAL_RULESET_READY=false
-BLACKBOX_SYNC_PENDING=false
-BLACKBOX_SYNC_LOG=""
 BLACKBOX_DETACHED_PID=""
 BLACKBOX_DKG_ALREADY_RUNNING=false
 BLACKBOX_DKG_FRESH_STATE=false
@@ -190,6 +192,7 @@ print(proc.pid)
         BLACKBOX_DETACHED_PID=$!
     fi
     disown "$BLACKBOX_DETACHED_PID" 2>/dev/null || true
+    install_record_started_pid "$BLACKBOX_DETACHED_PID"
 }
 
 detached_process_survived_startup() {
@@ -222,6 +225,15 @@ prepare_blackbox_dkg_process_environment() {
         warn "Could not prepare Node.js options for the DKG daemon."
         return 1
     fi
+    # Sync transfers at once, by the machine's memory (sync/process_limits.sync_slots): the
+    # node's own 10 from 8 GB, 4 below — the store shares the machine (bench 2026-10-22).
+    local slots=""
+    if slots="$("$VENV_DIR/bin/python" "$helper" sync-slots)" && [[ "$slots" =~ ^[0-9]+\ [0-9]+$ ]]; then
+        BLACKBOX_DKG_SYNC_GLOBAL_MAX_INFLIGHT="${slots%% *}"
+        BLACKBOX_DKG_SYNC_GLOBAL_QUEUE_LIMIT="${slots##* }"
+    else
+        warn "Could not size the node's sync slots for this machine; using the node's defaults."
+    fi
     # Record them so Blackbox's own node restarts (blackbox sync, the dashboard)
     # relaunch with the same limits (sync/process_limits.py). Not fatal: without
     # the record those restarts use the same defaults computed again.
@@ -229,7 +241,7 @@ prepare_blackbox_dkg_process_environment() {
         "$BLACKBOX_DKG_STORE_QUEUE_LIMIT" >/dev/null; then
         warn "Could not record the DKG node limits; Blackbox restarts will recompute them."
     fi
-    ok "DKG safety limits: one large sync at a time; V8 heap ${heap_mb}MB"
+    ok "DKG safety limits: V8 heap ${heap_mb}MB; $BLACKBOX_DKG_SYNC_GLOBAL_MAX_INFLIGHT syncs at once"
 }
 
 blackbox_dkg() {
@@ -241,6 +253,8 @@ blackbox_dkg() {
     fi
     # Process-level guards intentionally wrap the DKG entrypoint, not a store
     # adapter, so Blazegraph and managed Oxigraph receive identical protection.
+    # DKG_SYNC_TOTAL_TIMEOUT_MS and DKG_SWM_RECOVERY_TIMEOUT_MS have no effect: the
+    # node reads neither (DKG 10.0.25 has its sync limits built in).
     PATH="$node_bin_dir:$PATH" \
     DKG_HOME="$BLACKBOX_DKG_HOME" \
     DKG_ACCEPT_STORE_RESET="$accept_store_reset" \
@@ -563,6 +577,30 @@ choose_blackbox_dkg_port() {
     return 1
 }
 
+# The DKG-managed Oxigraph store listens on its own loopback port, 7878 unless the node's
+# config.json names one (store.options.port). Another DKG node on this machine — a second
+# product, a developer's own node — very likely holds 7878 already, and two stores cannot
+# share a port: Blackbox's node would fail to start its store. So a Blackbox node whose
+# config names no port gets the first free one from BLACKBOX_OXIGRAPH_FIRST_PORT, written
+# into its config. Prints the port to write, or nothing to leave the config as it is (a
+# configured port is kept; a Blackbox node already running holds its port itself).
+# The search starts ABOVE 7878: "free" is only what this moment shows, and another node's
+# store is briefly down whenever that node restarts — a Mac install probed inside such a
+# 2-second gap, took 7878 and failed to start (2026-10-22). Blackbox never takes the default.
+BLACKBOX_OXIGRAPH_FIRST_PORT=7879
+BLACKBOX_OXIGRAPH_LAST_PORT=7978
+choose_blackbox_oxigraph_port() {
+    local candidate
+    [ "$BLACKBOX_DKG_ALREADY_RUNNING" = true ] && return 0
+    for candidate in $(seq "$BLACKBOX_OXIGRAPH_FIRST_PORT" "$BLACKBOX_OXIGRAPH_LAST_PORT"); do
+        if ! port_in_use "$candidate"; then
+            printf '%s' "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
 check_blackbox_dkg_port() {
     local port="$BLACKBOX_DKG_PORT"
     local url="$BLACKBOX_DKG_DAEMON_URL"
@@ -638,7 +676,12 @@ require_docker_for_blazegraph() {
     fi
     if [ "$OS" = "macos" ] && command -v docker >/dev/null 2>&1 &&
         [ -d "/Applications/Docker.app" -o -d "$HOME/Applications/Docker.app" ]; then
-        step "Docker Desktop is installed but stopped; starting it now ..."
+        # Only a Docker Desktop this run opens is this run's to close again; one the user
+        # already had open (even with its engine stuck) is left as it is.
+        if ! pgrep -f 'Docker.app/Contents/MacOS/' >/dev/null 2>&1; then
+            BLACKBOX_OPENED_DOCKER_DESKTOP=true
+        fi
+        step "Docker Desktop's engine is not running; starting it now ..."
         open -gja Docker >/dev/null 2>&1 || true
         local waited=0
         while [ "$waited" -lt 120 ]; do
@@ -653,6 +696,12 @@ require_docker_for_blazegraph() {
             fi
         done
         warn "Docker Desktop did not become ready within 120 seconds."
+        # This run opened it, so this run closes it again: a failed start must not leave
+        # a half-started Docker Desktop behind on the machine.
+        if [ "${BLACKBOX_OPENED_DOCKER_DESKTOP:-false}" = true ]; then
+            osascript -e 'quit app "Docker"' >/dev/null 2>&1 || true
+            BLACKBOX_OPENED_DOCKER_DESKTOP=false
+        fi
     fi
     if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
         BLACKBOX_DOCKER_REQUIRED=true
@@ -678,30 +727,38 @@ use_blackbox_oxigraph() {
     warn "Using the DKG-managed Oxigraph store (no Docker container required)."
 }
 
+# Docker cannot run the Blazegraph store (not installed, its engine not answering, or the
+# store's container failing to start — KI-313/KI-398): the install falls back to the
+# DKG-managed Oxigraph store and never dead-ends (Amos, 2026-10-17). A person at a
+# terminal is still asked, with yes as the default — Enter, or no answer within
+# BLACKBOX_STORE_PROMPT_SECONDS, takes Oxigraph; only an explicit "n" stops the install
+# (and the install record then removes everything this run did). With no terminal —
+# an agent, a script, a server — Oxigraph is chosen automatically and the run says why.
+BLACKBOX_STORE_PROMPT_SECONDS="${BLACKBOX_STORE_PROMPT_SECONDS:-30}"
 confirm_oxigraph_fallback() {
     local reason="$1"
     local answer=""
     warn "$reason"
-    step "Recommended default: stop here, install/start or repair Docker, then re-run Blackbox with Blazegraph."
-    step "Alternative: type y to continue now with the DKG-managed Oxigraph store."
     # /dev/tty can exist and pass -r/-w while the piped `curl | bash`
     # process has no controlling terminal. Probe by opening it once and keep
     # that descriptor for both prompt and response so no shell-level
     # "Device not configured" errors leak into the install.
     if ! { exec 9<>/dev/tty; } 2>/dev/null; then
-        warn "No interactive terminal is available, so Oxigraph was not selected."
-        step "To choose it explicitly, re-run the installer with: --store oxigraph"
-        return 1
+        step "No terminal to ask, so Blackbox uses the DKG-managed Oxigraph store (no Docker needed)."
+        step "To move to Blazegraph later: make Docker work, then re-run the installer with --store blazegraph"
+        return 0
     fi
-    printf "Continue with Oxigraph instead? [y/N] " >&9
-    IFS= read -r answer <&9 || answer=""
+    step "Blackbox can continue with the DKG-managed Oxigraph store, which needs no Docker."
+    printf "Continue with Oxigraph? [Y/n] (yes in %ss) " "$BLACKBOX_STORE_PROMPT_SECONDS" >&9
+    IFS= read -r -t "$BLACKBOX_STORE_PROMPT_SECONDS" answer <&9 || answer=""
+    printf '\n' >&9
     exec 9>&-
     case "$answer" in
-        y|Y|yes|YES|Yes) return 0 ;;
-        *)
-            step "Keeping Blazegraph as the default. Set up Docker and re-run the installer."
+        n|N|no|NO|No)
+            step "Stopping without installing. Make Docker work, then re-run the installer."
             return 1
             ;;
+        *) return 0 ;;
     esac
 }
 
@@ -901,7 +958,13 @@ reset_fresh_managed_blazegraph() {
 
 ensure_blackbox_dkg_config() {
     local config_state
-    config_state="$("$VENV_DIR/bin/python" - "$BLACKBOX_DKG_HOME" "$BLACKBOX_DKG_PORT" "$BLACKBOX_DKG_SELECTED_STORE_BACKEND" "$BLACKBOX_DKG_STORE_URL" "$BLACKBOX_DKG_STORE_MANAGED_BY_DKG" "$BLACKBOX_CONTEXT_GRAPH_ID" "$BLACKBOX_DEFAULT_CONTEXT_GRAPH_ID" <<'PYEOF'
+    local oxigraph_port=""
+    if [ "$BLACKBOX_DKG_SELECTED_STORE_BACKEND" = "oxigraph-server" ] &&
+        ! oxigraph_port="$(choose_blackbox_oxigraph_port)"; then
+        err "No free port for the Oxigraph store in $BLACKBOX_OXIGRAPH_FIRST_PORT-$BLACKBOX_OXIGRAPH_LAST_PORT."
+        return 1
+    fi
+    config_state="$("$VENV_DIR/bin/python" - "$BLACKBOX_DKG_HOME" "$BLACKBOX_DKG_PORT" "$BLACKBOX_DKG_SELECTED_STORE_BACKEND" "$BLACKBOX_DKG_STORE_URL" "$BLACKBOX_DKG_STORE_MANAGED_BY_DKG" "$BLACKBOX_CONTEXT_GRAPH_ID" "$BLACKBOX_DEFAULT_CONTEXT_GRAPH_ID" "$oxigraph_port" "${BLACKBOX_DKG_SYNC_GLOBAL_MAX_INFLIGHT:-}" "${BLACKBOX_DKG_SYNC_GLOBAL_QUEUE_LIMIT:-}" <<'PYEOF'
 import json
 import os
 import secrets
@@ -918,6 +981,12 @@ context_graph_id = sys.argv[6]
 # Absent (an older caller): no graph is treated as the default, so the
 # steady profile stays exactly as before.
 default_context_graph_id = sys.argv[7] if len(sys.argv) > 7 else ""
+# The free port the installer chose for a DKG-managed Oxigraph store; used only when the
+# config names none (empty = keep the config as it is).
+oxigraph_port = int(sys.argv[8]) if len(sys.argv) > 8 and sys.argv[8] else 0
+# Sync slots for this machine (sync/process_limits.sync_slots): 10/20 from 8 GB, 4/8 below.
+sync_inflight = int(sys.argv[9]) if len(sys.argv) > 9 and sys.argv[9] else 10
+sync_queue = int(sys.argv[10]) if len(sys.argv) > 10 and sys.argv[10] else 20
 home.mkdir(parents=True, exist_ok=True)
 cfg_path = home / "config.json"
 original = None
@@ -934,6 +1003,7 @@ data.setdefault("name", "agent-blackbox")
 data["apiPort"] = api_port
 data.setdefault("listenPort", 0)
 data["nodeRole"] = "edge"
+data.setdefault("DKG_Core_chain_cache", True)
 data["networkConfig"] = "mainnet-base"
 # Relay reachability: an edge node behind NAT must hold circuit-relay
 # reservations so other members can dial it (and so it can dial them). DKG
@@ -958,17 +1028,19 @@ data["durableSyncEnabled"] = True
 # Umanitek's default graph uses the DKG 10.0.21 native profile (KI-282, the same
 # profile `blackbox sync` persists in sync/managed_node.py): the node's VM
 # reconciler recovers the graph and the older sync reconciler stays off so it
-# does not compete for the single sync slot. Any other graph keeps the steady one.
+# does not compete with that recovery. Any other graph keeps the steady one.
 native_profile = context_graph_id == default_context_graph_id
 data["syncReconcilerEnabled"] = not native_profile
 if native_profile:
     data["vmReconcilerEnabled"] = True
     data["vmRecoveryPrefetchEnabled"] = True
 data.pop("syncAgentsMeta", None)
-data["syncGlobalMaxInflight"] = 1
-data["syncGlobalQueueLimit"] = 0
+data["syncGlobalMaxInflight"] = sync_inflight   # verified and community data side by side, sized for the machine
+data["syncGlobalQueueLimit"] = sync_queue
 data.pop("restrictAutoSubscribeContextGraphs", None)
-data["syncSharedMemoryOnConnect"] = False
+# One graph (2026-10-16): community reports live in the shared memory of the
+# verified graph; ones written while this node was offline come back on connect.
+data["syncSharedMemoryOnConnect"] = True
 priorities = data.get("syncContextGraphPriorities")
 if not isinstance(priorities, dict):
     priorities = {}
@@ -999,9 +1071,12 @@ if store_backend == "blazegraph":
     }
 elif store_backend == "oxigraph-server":
     previous_options = store.get("options") if previous_backend == store_backend else None
+    options = dict(previous_options) if isinstance(previous_options, dict) else {}
+    if oxigraph_port and "port" not in options:
+        options["port"] = oxigraph_port
     data["store"] = {"backend": "oxigraph-server"}
-    if isinstance(previous_options, dict) and previous_options:
-        data["store"]["options"] = previous_options
+    if options:
+        data["store"]["options"] = options
 else:
     raise SystemExit(f"unsupported store backend: {store_backend}")
 rendered = json.dumps(data, indent=2) + "\n"
@@ -1059,7 +1134,6 @@ Environment overrides:
   BLACKBOX_DKG_DAEMON_URL, BLACKBOX_DKG_CATCHUP_TIMEOUT,
   BLACKBOX_DKG_STORE_QUEUE_LIMIT, BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION,
   BLACKBOX_CONTEXT_GRAPH_ID, BLACKBOX_GRAPH_PEER_ID,
-  BLACKBOX_COMMUNITY_GRAPH_ID, BLACKBOX_COMMUNITY_GRAPH_PEER_ID (set as a pair),
   BLACKBOX_LLM_PROVIDER,
   BLACKBOX_LLM_MODEL, BLACKBOX_LLM_KEY_SOURCE=hermes|new, BLACKBOX_LLM_API_KEY,
   BLACKBOX_HERMES_SETUP=reuse|always|never, BLACKBOX_AUTO_DASHBOARD=0|1,
@@ -1726,6 +1800,28 @@ run_hermes_setup() {
 }
 
 # ── DKG node CLI + bootstrap ────────────────────────────────────────────────
+# Download BLACKBOX_DKG_PACKAGE as a tarball and check ITS sha512 against the pin — the file
+# npm will install, not the registry's claim about it (a registry serving a different file
+# would also report a matching hash). Prints the tarball path (so its warnings go to stderr);
+# the caller installs and removes it.
+fetch_pinned_dkg_tarball() {
+    local dir="" file="" actual=""
+    dir="$(mktemp -d "${TMPDIR:-/tmp}/blackbox-dkg-pack.XXXXXX")" || return 1
+    if ! file="$(npm pack "$BLACKBOX_DKG_PACKAGE" --pack-destination "$dir" --silent 2>/dev/null | tail -n 1)" ||
+        [ -z "$file" ] || [ ! -f "$dir/$file" ]; then
+        rm -rf "$dir"
+        warn "Could not download $BLACKBOX_DKG_PACKAGE from the npm registry." >&2
+        return 1
+    fi
+    actual="$(node -e 'const c=require("crypto"),f=require("fs");console.log("sha512-"+c.createHash("sha512").update(f.readFileSync(process.argv[1])).digest("base64"))' "$dir/$file" 2>/dev/null)"
+    if [ "$actual" != "$BLACKBOX_DKG_INTEGRITY" ]; then
+        rm -rf "$dir"
+        warn "The downloaded $BLACKBOX_DKG_PACKAGE (${actual:-no checksum}) is not the one this Blackbox release pins; it was not installed." >&2
+        return 1
+    fi
+    printf '%s\n' "$dir/$file"
+}
+
 install_blackbox_dkg_package() {
     local backup_dir=""
     local package_json="$BLACKBOX_DKG_CLI_DIR/node_modules/@origintrail-official/dkg/package.json"
@@ -1737,17 +1833,19 @@ install_blackbox_dkg_package() {
         return 1
     fi
 
-    # A pinned checksum is compared with what the registry publishes for the package BEFORE
-    # anything is installed; npm then checks the download against that same published hash.
-    if [ -n "$BLACKBOX_DKG_INTEGRITY" ]; then
-        local published=""
-        published="$(npm view "$BLACKBOX_DKG_PACKAGE" dist.integrity 2>/dev/null || true)"
-        if [ "$published" != "$BLACKBOX_DKG_INTEGRITY" ]; then
-            warn "The registry's checksum for $BLACKBOX_DKG_PACKAGE (${published:-unavailable}) is not the one this Blackbox release pins; it was not installed."
-            return 1
-        fi
-        ok "DKG package checksum matches the pinned one ($BLACKBOX_DKG_PACKAGE)"
-    fi
+    # The package is downloaded first and the tarball's own sha512 compared with the pin;
+    # only a tarball that matches is handed to npm install. No pin = not installed.
+    local tarball=""
+    case "$BLACKBOX_DKG_INTEGRITY" in
+        unpinned)
+            warn "BLACKBOX_DKG_INTEGRITY=unpinned: $BLACKBOX_DKG_PACKAGE is installed without a checksum check." ;;
+        "")
+            warn "No checksum is pinned for $BLACKBOX_DKG_PACKAGE; it was not installed. Set BLACKBOX_DKG_INTEGRITY to its sha512 (npm view $BLACKBOX_DKG_PACKAGE dist.integrity), or BLACKBOX_DKG_INTEGRITY=unpinned to skip the check knowingly."
+            return 1 ;;
+        *)
+            tarball="$(fetch_pinned_dkg_tarball)" || return 1
+            ok "DKG package checksum verified ($BLACKBOX_DKG_PACKAGE)" ;;
+    esac
 
     if [ -d "$BLACKBOX_DKG_CLI_DIR/.git" ]; then
         backup_dir="${BLACKBOX_DKG_CLI_DIR}.custom-backup-$(date +%Y%m%d%H%M%S)"
@@ -1769,8 +1867,12 @@ pkg.allowScripts = Object.assign({}, pkg.allowScripts);
 for (const name of process.argv.slice(2)) if (pkg.allowScripts[name] !== false) pkg.allowScripts[name] = true;
 fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + "\n");
 ' "$BLACKBOX_DKG_CLI_DIR/package.json" "${BLACKBOX_DKG_ALLOW_SCRIPTS[@]}"
-    if ! npm install --prefix "$BLACKBOX_DKG_CLI_DIR" --prefer-online \
-        "$BLACKBOX_DKG_PACKAGE" >"$npm_log" 2>&1; then
+    local install_spec="$BLACKBOX_DKG_PACKAGE"
+    [ -n "$tarball" ] && install_spec="$tarball"
+    npm install --prefix "$BLACKBOX_DKG_CLI_DIR" --prefer-online "$install_spec" >"$npm_log" 2>&1
+    local npm_status=$?
+    [ -n "$tarball" ] && rm -rf "$(dirname "$tarball")"
+    if [ "$npm_status" -ne 0 ]; then
         if [ -n "$backup_dir" ]; then
             rm -rf "$BLACKBOX_DKG_CLI_DIR"
             mv "$backup_dir" "$BLACKBOX_DKG_CLI_DIR"
@@ -1835,7 +1937,8 @@ fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + "\n");
 install_dkg() {
     heading "Setting up the OriginTrail DKG node"
     if [ "$SKIP_DKG" = true ]; then
-        BLACKBOX_INSTALL_INCOMPLETE=true
+        # Asked for explicitly: an install without the node is what the operator chose, so it
+        # is not "incomplete" and is kept (the summary still says the threat graph is not set up).
         BLACKBOX_THREAT_GRAPH_INCOMPLETE=true
         warn "Skipping DKG node setup (--skip-dkg)."
         dkg_manual_hint
@@ -1952,46 +2055,25 @@ install_dkg() {
     fi
 }
 
-# Pull the verified ruleset from the graph now, so detection is live immediately
-# after install rather than after the user runs a manual sync.
+# The first verified threat-graph sync is NOT part of the install (Amos, 2026-10-17): it
+# takes about half an hour and depends on the network, so waiting for it would turn a slow
+# connection into a failed install — and, all or nothing, roll back a working one. The
+# dashboard's own sync worker (the dashboard is started next, by main) starts it about ten
+# seconds after the dashboard starts, runs the same controlled `blackbox sync --wait
+# --require-rules` the installer used to, keeps the graph current, and shows the progress.
 sync_ruleset() {
     [ "${DKG_READY:-false}" = true ] || return 0
-    heading "Syncing the threat ruleset"
-    mkdir -p "$HERMES_HOME/logs"
-    BLACKBOX_SYNC_LOG="$HERMES_HOME/logs/blackbox-sync-install.log"
-    step "Requesting one controlled verified graph catch-up ..."
-    step "Sync progress will stream below (also saved to $BLACKBOX_SYNC_LOG)."
-    # Start the dashboard before the long initial transfer so discovery,
-    # download, verification, and reconciliation are observable immediately.
-    : >"$BLACKBOX_SYNC_LOG"
-    if [ "$BLACKBOX_AUTO_DASHBOARD" != "0" ] &&
-        [ "$BLACKBOX_AUTO_DASHBOARD" != "false" ] &&
-        [ "$BLACKBOX_AUTO_DASHBOARD" != "never" ] &&
-        [ "$BLACKBOX_AUTO_DASHBOARD" != "no" ]; then
-        start_dashboard
-    fi
-
-    local sync_code=0
-    if PYTHONUNBUFFERED=1 "$HERMES_BIN" blackbox sync --wait --timeout "$BLACKBOX_DKG_CATCHUP_TIMEOUT" --require-rules 2>&1 |
-        tee -a "$BLACKBOX_SYNC_LOG"; then
-        sync_code=0
-    else
-        sync_code=$?
-    fi
-    if [ "$sync_code" -eq 0 ]; then
-        ok "Ruleset synced — Blackbox is watching with the latest threats"
-    else
-        if grep -Eq '  [1-9][0-9,]* verified threats ready' "$BLACKBOX_SYNC_LOG"; then
-            BLACKBOX_PARTIAL_RULESET_READY=true
-        fi
-        BLACKBOX_INSTALL_INCOMPLETE=true
-        BLACKBOX_THREAT_GRAPH_INCOMPLETE=true
-        err "Initial verified threat-graph sync did not complete."
-        step "A partial verified ruleset may already be active, but setup is incomplete until the curator snapshot settles."
-        step "Retry the full sync with: blackbox sync --wait --require-rules"
-    fi
+    heading "Threat graph"
+    case "$BLACKBOX_AUTO_DASHBOARD" in
+        0|false|never|no)
+            step "The dashboard is off, so nothing syncs the threat graph yet. Start the first sync with:"
+            echo "    blackbox sync --wait --require-rules"
+            return 0
+            ;;
+    esac
+    ok "The first threat-graph sync runs in the background (about 30 minutes)"
+    step "Follow it on the dashboard: http://127.0.0.1:${BLACKBOX_DASHBOARD_PORT:-9700}"
     ok "DKG native reconciliation enabled; one in-flight slot; zero queue"
-    return 0
 }
 
 dkg_manual_hint() {
@@ -2022,11 +2104,10 @@ enable_and_configure() {
     fi
 
     step "Writing plugins.entries.blackbox defaults to $HERMES_HOME/config.yaml ..."
-    if "$VENV_DIR/bin/python" - "$HERMES_HOME/config.yaml" "$DKG_NETWORK" "$BLACKBOX_CONTEXT_GRAPH_ID" "$BLACKBOX_GRAPH_PEER_ID" "$BLACKBOX_DKG_DAEMON_URL" "$BLACKBOX_DKG_HOME" "$BLACKBOX_DKG_BIN" "$BLACKBOX_COMMUNITY_GRAPH_ID" "$BLACKBOX_COMMUNITY_GRAPH_PEER_ID" "${BLACKBOX_PLUGIN_DIR:-$REPO_DIR}" <<'PYEOF'
+    if "$VENV_DIR/bin/python" - "$HERMES_HOME/config.yaml" "$DKG_NETWORK" "$BLACKBOX_CONTEXT_GRAPH_ID" "$BLACKBOX_GRAPH_PEER_ID" "$BLACKBOX_DKG_DAEMON_URL" "$BLACKBOX_DKG_HOME" "$BLACKBOX_DKG_BIN" "${BLACKBOX_PLUGIN_DIR:-$REPO_DIR}" <<'PYEOF'
 import sys, os
 cfg_path, network, context_graph_id, graph_peer_id, dkg_url, dkg_home, dkg_bin = sys.argv[1:8]
-# Optional (older callers pass seven arguments): the community graph + its owner peer id, and the checkout.
-community_graph_id, community_graph_peer_id, repo_dir = (sys.argv[8:11] + ["", "", ""])[:3]
+repo_dir = (sys.argv[8:9] + [""])[0]   # optional (older callers pass seven arguments): the checkout
 try:
     try:
         import hermes_yaml as yaml  # Hermes 0.21.7+: YAML through ruamel (PyYAML left the host)
@@ -2045,8 +2126,9 @@ if os.path.exists(cfg_path):
 plugins = data.setdefault("plugins", {})
 entries = plugins.setdefault("entries", {})
 blackbox = entries.setdefault("blackbox", {})
+no_explicit_snapshot_profile = "snapshot_sync" not in blackbox
 # Idempotent for custom user edits, but migrate deprecated defaults that point
-# at the user's shared DKG install or a retired community graph.
+# at the user's shared DKG install or a retired graph.
 legacy_dkg_urls = {"http://127.0.0.1:9200", "http://localhost:9200"}
 legacy_graphs = {"0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox", "umanitek/blackbox-threats-staging", "umanitek/guardian-threats-staging", "umanitek/guardian-threats"}
 legacy_peers = {"12D3KooWAuEHYTWbD3R3yPTcECCYZnrjHNpJmrUw5b4D5T3m5Kr3", "12D3KooWBY9jmNATMPv1DZcKbFas5RtjpkhT69pPwvkUBY2MMnDX", "12D3KooWQHQd1SNecrRxwceqPJkXS" + "K" + "EYn8vrV4QyJ2AfqeYwXz1E", "12D3KooWBJskzr2unXQG9mR3LRZFUJoxWr1PN6hTbyWyKndHXjZM"}
@@ -2098,14 +2180,11 @@ if current_graph in legacy_graphs:
 if not blackbox.get("graph_peer_id") or str(blackbox.get("graph_peer_id")) in legacy_peers:
     blackbox["graph_peer_id"] = graph_peer_id
     added.append("graph_peer_id")
-# The community graph and its owner's peer id travel as a pair (KI-216): the
-# installer env names them explicitly, so an explicit value always wins.
-if community_graph_id:
-    for key, value in (("community_graph_id", community_graph_id),
-                       ("community_graph_peer_id", community_graph_peer_id)):
-        if str(blackbox.get(key) or "") != value:
-            blackbox[key] = value
-            added.append(key)
+# One graph (2026-10-16): community reports live in the verified graph's shared
+# memory, so the separate community graph and its owner's peer id are dropped.
+for key in ("community_graph_id", "community_graph_peer_id"):
+    if blackbox.pop(key, None) is not None:
+        added.append(f"{key} (removed)")
 defaults = {
     "mode": "audit",
     "context_graph_id": context_graph_id,
@@ -2124,6 +2203,18 @@ defaults = {
     # Optional LLM reviewer — off until `blackbox setup-llm` fills it in.
     "llm": {"enabled": False, "provider": "", "model": "", "api_key": ""},
 }
+# Keep community protection and ordinary sync unless the installed plugin can
+# admit a snapshot attempt; DKG authenticates cores before accepting any data.
+if no_explicit_snapshot_profile:
+    try:
+        import runpy
+        from pathlib import Path
+        checkout = Path(repo_dir)
+        plugin = checkout if (checkout / "plugin.yaml").is_file() else checkout / "plugins" / "blackbox"
+        defaults.update(runpy.run_path(str(plugin / "setup" / "sync_defaults.py"))["defaults"](
+            {**defaults, **blackbox}, os.environ.get("BLACKBOX_DKG_NETWORK", "mainnet-base")))
+    except Exception:
+        print("  Keeping ordinary sync: the compatible Core-cache default is not available.")
 for k, v in defaults.items():
     if k not in blackbox:
         blackbox[k] = v
@@ -2323,6 +2414,79 @@ setup_llm() {
     fi
 }
 
+# ── The dashboard's supervisor (KI-455) ─────────────────────────────────────
+# Once a service runs the dashboard (systemd unit, or a LOADED LaunchAgent), it is started
+# and restarted only through that service (LES-063). An update once launched its own copy
+# beside the unit: the copy stopped the unit's dashboard, `enable --now` then started the
+# unit again, the unit's dashboard replaced the copy, and the final check caught it mid-start
+# and rolled a healthy update back (bb-install-1022b, 2026-10-27).
+BLACKBOX_DASHBOARD_LAUNCHD_LABEL=ai.umanitek.blackbox-dashboard
+# A dashboard (re)start takes 5-15 s, longer on a 2-CPU machine while the node syncs: the
+# final check waits this long for an answer before calling it broken (LES-011 — still
+# starting is not broken).
+BLACKBOX_DASHBOARD_ANSWER_WAIT_SECONDS="${BLACKBOX_DASHBOARD_ANSWER_WAIT_SECONDS:-60}"
+# Set by start_dashboard when the service must restart the dashboard (new code, or not
+# answering); register_dashboard_service does it once the unit itself is current.
+BLACKBOX_DASHBOARD_RESTART_PENDING=false
+
+# Prints who runs the dashboard: systemd | systemd-user | launchd, or nothing (no service:
+# the installer launches it). A LaunchAgent counts only while loaded — one registered "for
+# the next login" does not run the dashboard yet.
+blackbox_dashboard_supervisor() {
+    if command -v systemctl >/dev/null 2>&1; then
+        if [ -f "$BLACKBOX_SYSTEMD_DIR/blackbox-dashboard.service" ] &&
+            systemctl is-enabled --quiet blackbox-dashboard 2>/dev/null; then
+            echo systemd
+            return 0
+        fi
+        if [ -f "$HOME/.config/systemd/user/blackbox-dashboard.service" ] &&
+            systemctl --user is-enabled --quiet blackbox-dashboard 2>/dev/null; then
+            echo systemd-user
+            return 0
+        fi
+    fi
+    if [ "$(uname -s 2>/dev/null)" = Darwin ] && command -v launchctl >/dev/null 2>&1 &&
+        launchctl print "gui/$(id -u)/$BLACKBOX_DASHBOARD_LAUNCHD_LABEL" >/dev/null 2>&1; then
+        echo launchd
+    fi
+    return 0
+}
+
+# `blackbox_dashboard_control restart|reload <supervisor>` — restart the dashboard through its
+# service; `reload` first makes the service re-read its (rewritten or restored) definition.
+blackbox_dashboard_control() {
+    local action="$1" supervisor="$2" target
+    local -a systemctl_cmd=(systemctl)
+    case "$supervisor" in
+        systemd | systemd-user)
+            [ "$supervisor" = systemd-user ] && systemctl_cmd+=(--user)
+            if [ "$action" = reload ]; then "${systemctl_cmd[@]}" daemon-reload || return 1; fi
+            "${systemctl_cmd[@]}" restart blackbox-dashboard
+            ;;
+        launchd)
+            target="gui/$(id -u)/$BLACKBOX_DASHBOARD_LAUNCHD_LABEL"
+            if [ "$action" = reload ]; then
+                launchctl bootout "$target" 2>/dev/null || true
+                launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/$BLACKBOX_DASHBOARD_LAUNCHD_LABEL.plist"
+            else
+                launchctl kickstart -k "$target"
+            fi
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+# Whether the dashboard at URL answers within WAIT seconds (polled every 2 s).
+blackbox_dashboard_answers_within() {
+    local url="$1" wait="$2" waited=0
+    while true; do
+        curl -fsS --max-time 10 "$url" >/dev/null 2>&1 && return 0
+        [ "$waited" -ge "$wait" ] && return 1
+        sleep 2
+        waited=$((waited + 2))
+    done
+}
+
 start_dashboard() {
     case "$BLACKBOX_AUTO_DASHBOARD" in
         0|false|never|no)
@@ -2346,12 +2510,25 @@ start_dashboard() {
     if [ -z "$revision" ] && [ -n "$REPO_DIR" ] && git -C "$REPO_DIR" rev-parse -q --verify HEAD >/dev/null 2>&1; then
         revision="$(git -C "$REPO_DIR" rev-parse HEAD)"
     fi
+    local supervisor
+    supervisor="$(blackbox_dashboard_supervisor)"
     if command -v curl >/dev/null 2>&1 && curl -fsS "$url/" >/dev/null 2>&1; then
         if [ -z "$revision" ] || [ "$(cat "$revision_file" 2>/dev/null)" = "$revision" ]; then
             ok "Dashboard already running at $url"
             return 0
         fi
         step "Blackbox was updated: restarting the dashboard so the new code runs"
+    fi
+
+    # A service runs the dashboard: it restarts it once its own definition is current
+    # (register_dashboard_service) — never a second copy launched beside it (KI-455).
+    if [ -n "$supervisor" ]; then
+        step "The dashboard runs under its $supervisor service; it is restarted through it below."
+        BLACKBOX_DASHBOARD_RESTART_PENDING=true
+        if [ -n "$revision" ]; then
+            mkdir -p "$(dirname "$revision_file")" && printf '%s\n' "$revision" > "$revision_file"
+        fi
+        return 0
     fi
 
     step "Launching: blackbox dashboard"
@@ -2379,7 +2556,8 @@ print_sharing_notice() {
   your agent meets a threat already listed in the verified threat graph, this
   node shares a privacy-safe statement (the threat's identifier and type, the
   tool that met it, blocked or flagged, and what the threat targets; never
-  prompts, commands, file paths or files) with the Blackbox community graph.
+  prompts, commands, file paths or files) with the Blackbox community, in that
+  graph's shared memory, where Umanitek's curators review it.
   Turn it on (this records your agreement to the reporter terms):
 
       blackbox report --enable-sharing         (or the dashboard's sharing toggle)
@@ -2387,75 +2565,21 @@ EOF
 }
 
 # ── Guided next steps (short — everything above already ran) ─────────────────
+# Printed only after the final check passed and the install was kept: an install that is not
+# complete never reaches here (it is rolled back), so there is one outcome to describe.
 next_steps() {
     local docs_url="${REPO_URL%.git}"
     local path_note=""
     local mode="${BLACKBOX_SELECTED_MODE:-$(read_blackbox_mode 2>/dev/null || echo audit)}"
     local store_note="$(blackbox_store_description)"
+    local graph_note="  Threat graph: the first sync runs in the background (about 30 minutes);
+                the dashboard shows its progress."
     case ":$PATH:" in
         *":$HOME/.local/bin:"*) : ;;
         *) path_note=$'\n  First reload your shell so `blackbox` is on PATH:  exec $SHELL -l' ;;
     esac
-    if [ "$BLACKBOX_SYNC_PENDING" = true ]; then
-        heading "Blackbox dashboard is running; threat-graph sync is catching up."
-        cat <<EOF
-${path_note}
-  Dashboard:  http://127.0.0.1:${BLACKBOX_DASHBOARD_PORT:-9700}
-  DKG node:   $BLACKBOX_DKG_DAEMON_URL
-  DKG home:   $BLACKBOX_DKG_HOME
-  DKG CLI:    $BLACKBOX_DKG_BIN
-  Store:      $store_note
-
-  The public threat-graph subscription and DKG sync are running in the
-  background. Do not treat this install as fully protected until this command
-  succeeds:
-
-      blackbox sync --wait --require-rules
-
-  Background log:
-      ${BLACKBOX_SYNC_LOG:-$HERMES_HOME/logs/blackbox-sync-install.log}
-
-  Docs:        $docs_url
-EOF
-        print_sharing_notice
-        echo ""
-        return 0
-    fi
-    if [ "$BLACKBOX_INSTALL_INCOMPLETE" = true ]; then
-        heading "Blackbox installed, but setup is incomplete."
-        cat <<EOF
-${path_note}
-EOF
-        if [ "$BLACKBOX_THREAT_GRAPH_INCOMPLETE" = true ]; then
-            if [ "$BLACKBOX_PARTIAL_RULESET_READY" = true ]; then
-                cat <<EOF
-  A partial verified ruleset is active, but the authoritative snapshot did not
-  finish. Keep the dashboard open to inspect the active protection, then retry:
-
-      blackbox sync --wait --require-rules
-
-EOF
-            else
-                cat <<EOF
-  The local DKG node did not provide a non-empty ruleset yet. Do not treat this
-  install as protected until this command succeeds:
-
-      blackbox sync --wait --require-rules
-
-EOF
-            fi
-        fi
-        cat <<EOF
-  Dashboard:  http://127.0.0.1:${BLACKBOX_DASHBOARD_PORT:-9700}
-  DKG node:   $BLACKBOX_DKG_DAEMON_URL
-  DKG home:   $BLACKBOX_DKG_HOME
-  DKG CLI:    $BLACKBOX_DKG_BIN
-  Store:      $store_note
-  Docs:        $docs_url
-EOF
-        print_sharing_notice
-        echo ""
-        return 0
+    if [ "$BLACKBOX_THREAT_GRAPH_INCOMPLETE" = true ]; then
+        graph_note="  Threat graph: not set up (--skip-dkg). Run the installer without it to add the DKG node."
     fi
     heading "Blackbox is ready ($mode mode)."
     cat <<EOF
@@ -2465,11 +2589,453 @@ ${path_note}
   DKG home:   $BLACKBOX_DKG_HOME
   DKG CLI:    $BLACKBOX_DKG_BIN
   Store:      $store_note
-  Sync now:    blackbox sync --wait
+${graph_note}
   Docs:        $docs_url
 EOF
     print_sharing_notice
     echo ""
+}
+
+# ── Pre-flight: everything that can be known before the first change ────────
+# A check that would fail half-way through the install fails here instead, while nothing
+# has been downloaded or written: free disk, the network sources the install pulls from,
+# and the DKG store (Docker for Blazegraph, else the built-in Oxigraph — decided now, so a
+# person is asked at the start rather than after Hermes is already installed).
+# Measured 2026-10-17 on bb-trader-1: a complete install holds ~7 GB (checkout 2.1 GB,
+# Hermes 0.9 GB, DKG package 0.6 GB, the synced graph 2.3 GB, Node 0.2 GB).
+BLACKBOX_MIN_FREE_GB_FRESH=8
+BLACKBOX_MIN_FREE_GB_UPGRADE=2
+BLACKBOX_PREFLIGHT_NETWORK_SECONDS=20
+BLACKBOX_NPM_REGISTRY_PING="https://registry.npmjs.org/-/ping"
+
+preflight_install() {
+    heading "Checking this machine can take the whole install"
+    preflight_disk
+    preflight_network
+    preflight_store_choice
+    ok "Pre-flight passed; installing"
+}
+
+# Free kilobytes on the filesystem that holds PATH (or its nearest existing parent).
+free_kb_at() {
+    local dir="$1"
+    while [ ! -d "$dir" ]; do dir="$(dirname "$dir")"; done
+    df -Pk "$dir" | awk 'NR == 2 { print $4 }'
+}
+
+preflight_disk() {
+    local need_gb="$BLACKBOX_MIN_FREE_GB_FRESH" free_kb
+    [ -d "$BLACKBOX_DKG_HOME" ] && need_gb="$BLACKBOX_MIN_FREE_GB_UPGRADE"
+    free_kb="$(free_kb_at "$BLACKBOX_INSTALL_ROOT")"
+    if [ -n "$free_kb" ] && [ "$free_kb" -lt $((need_gb * 1024 * 1024)) ]; then
+        err "Not enough disk space: $((free_kb / 1024 / 1024)) GB free where Blackbox installs, $need_gb GB needed."
+        step "Free some space (or set BLACKBOX_INSTALL_DIR to a bigger disk), then run the installer again."
+        exit 1
+    fi
+    ok "Disk: $((free_kb / 1024 / 1024)) GB free ($need_gb GB needed)"
+}
+
+# Whether this script runs from inside the checkout it installs (no clone, no fetch).
+install_uses_local_checkout() {
+    [ -n "$BLACKBOX_INSTALL_SCRIPT" ] && [ -f "$BLACKBOX_INSTALL_SCRIPT" ] &&
+        [ "$(cd "$(dirname "$BLACKBOX_INSTALL_SCRIPT")/.." && pwd)" = "$BLACKBOX_INSTALL_ROOT" ]
+}
+
+preflight_network() {
+    if [ "$BLACKBOX_SETUP_ONLY" != true ] && ! install_uses_local_checkout; then
+        if ! GIT_TERMINAL_PROMPT=0 git ls-remote --exit-code --heads "$REPO_URL" "$REPO_BRANCH" >/dev/null 2>&1; then
+            err "Cannot reach branch $REPO_BRANCH of $REPO_URL."
+            step "Check the internet connection (and BLACKBOX_REPO_URL / BLACKBOX_REPO_BRANCH), then run the installer again."
+            exit 1
+        fi
+        ok "Network: $REPO_URL ($REPO_BRANCH) reachable"
+    fi
+    [ "$SKIP_DKG" = true ] && return 0
+    if command -v curl >/dev/null 2>&1 &&
+        ! curl -fsS --max-time "$BLACKBOX_PREFLIGHT_NETWORK_SECONDS" "$BLACKBOX_NPM_REGISTRY_PING" >/dev/null 2>&1; then
+        err "Cannot reach the npm registry, where the DKG node is downloaded from."
+        step "Check the internet connection (or proxy), then run the installer again."
+        exit 1
+    fi
+    ok "Network: npm registry reachable"
+}
+
+# Decide the DKG store now. An existing node keeps its store, an explicit choice is kept,
+# and setup-only mode keeps its own rule (Oxigraph whenever Docker is absent). Otherwise
+# Blazegraph when Docker works; when it does not, Oxigraph (confirm_oxigraph_fallback asks
+# a person at a terminal, defaulting to yes, and chooses it on its own with no terminal).
+preflight_store_choice() {
+    [ "$SKIP_DKG" = true ] && return 0
+    [ "$BLACKBOX_DKG_STORE_URL_EXPLICIT" = true ] && return 0
+    [ "$BLACKBOX_DKG_STORE_BACKEND" = "oxigraph" ] && return 0
+    [ -f "$BLACKBOX_DKG_HOME/config.json" ] && return 0
+    [ "$BLACKBOX_SETUP_ONLY" = true ] && [ "$BLACKBOX_DKG_STORE_BACKEND" = "auto" ] &&
+        ! blackbox_docker_available && return 0
+    if require_docker_for_blazegraph; then
+        return 0
+    fi
+    if [ "$BLACKBOX_DKG_STORE_BACKEND" = "auto" ] &&
+        confirm_oxigraph_fallback "Docker cannot run the Blazegraph store on this machine."; then
+        BLACKBOX_DKG_STORE_BACKEND="oxigraph"
+        BLACKBOX_DOCKER_REQUIRED=false
+        ok "Store: DKG-managed Oxigraph (no Docker needed)"
+        return 0
+    fi
+    err "Stopped before installing anything: the Blazegraph store needs a working Docker."
+    exit 1
+}
+
+# ── The finish line: installed, running and checked ─────────────────────────
+# The install counts only when every part answers. Anything less exits non-zero, and the
+# install record puts the machine back the way it was.
+blackbox_store_answers() {
+    local status store_url
+    status="$(curl -fsS --max-time 5 "$BLACKBOX_DKG_DAEMON_URL/api/status" 2>/dev/null)" || return 1
+    store_url="$(printf '%s' "$status" | "$VENV_DIR/bin/python" -c \
+        'import json, sys; print(json.load(sys.stdin).get("storeUrl") or "")' 2>/dev/null)"
+    # A node that reports no store address passed blackbox_dkg_answers with its store up.
+    [ -n "$store_url" ] || return 0
+    curl -fsS --max-time 10 -H 'Accept: application/sparql-results+json' \
+        --data-urlencode 'query=ASK {}' "$store_url" >/dev/null 2>&1
+}
+
+verify_install() {
+    local failed=false supervisor dashboard_url="http://127.0.0.1:${BLACKBOX_DASHBOARD_PORT:-9700}/"
+    heading "Checking the install"
+    verify_part() {   # verify_part "what" command…: report one part; remember any failure
+        local what="$1"; shift
+        if "$@" >/dev/null 2>&1; then ok "$what"; else err "$what — NOT working"; failed=true; fi
+    }
+    [ "$BLACKBOX_INSTALL_INCOMPLETE" = true ] && { err "A step above did not complete."; failed=true; }
+    verify_part "Hermes runs" "$HERMES_BIN" --version
+    verify_part "Hermes loads the Blackbox plugin" "$HERMES_BIN" blackbox --help
+    if [ "$SKIP_DKG" != true ]; then
+        verify_part "DKG node answers at $BLACKBOX_DKG_DAEMON_URL" blackbox_dkg_answers
+        verify_part "DKG store answers" blackbox_store_answers
+        supervisor="$(blackbox_dkg_supervisor)"
+        [ -z "$supervisor" ] || verify_part "DKG node runs under its $supervisor service" blackbox_dkg_owned_by "$supervisor"
+    fi
+    case "$BLACKBOX_AUTO_DASHBOARD" in
+        0|false|never|no) ;;
+        *) verify_part "Dashboard answers at $dashboard_url" \
+            blackbox_dashboard_answers_within "$dashboard_url" "$BLACKBOX_DASHBOARD_ANSWER_WAIT_SECONDS" ;;
+    esac
+    unset -f verify_part
+    if [ "$failed" = true ]; then
+        err "The install is not complete, so it will not be kept."
+        exit 1
+    fi
+    ok "Everything is installed, running and checked"
+}
+
+# ── All or nothing: the install record and its rollback ─────────────────────
+# Founder decision 2026-10-17: an install either finishes completely — Hermes, the plugin,
+# the DKG node, its store, the dashboard and their services all running and checked — or
+# leaves the machine as it was before it started. A Mac install that stopped half-way
+# (Docker never came up) had left Hermes installed with no Blackbox in it.
+#
+# Pattern: a before-image transaction (Memento). install_record_begin notes, BEFORE the
+# first change, which paths this installer may create already exist, and copies the small
+# files it rewrites. Every exit that is not install_record_commit — an error, `set -e`,
+# Ctrl-C, a failed final check — runs rollback_install: stop what this run started,
+# unregister the services it registered, remove the Docker store it created, remove what
+# did not exist before and put back what it rewrote. Large state that already existed (an
+# upgrade's synced graph, a user's own Hermes home in setup-only mode) is never deleted:
+# only the files this run changes inside it are restored.
+INSTALL_RECORD_DIR=""
+INSTALL_RECORD_COMMITTED=false
+BLACKBOX_OPENED_DOCKER_DESKTOP=false   # set when this run opened Docker Desktop (rollback closes it)
+# The user's command folder: Hermes's setup can add tools there (uv, launchers) besides hermes.
+BLACKBOX_USER_BIN_DIR="$HOME/.local/bin"
+BLACKBOX_LAUNCHD_LABELS="ai.umanitek.blackbox-dkg ai.umanitek.blackbox-dashboard"
+BLACKBOX_SERVICE_NAMES="blackbox-dkg blackbox-dashboard blackbox-curator blackbox-curate-watch blackbox-lab-tunnel blackbox-console"
+BLACKBOX_STORE_CONTAINER_PREFIX="dkg-blazegraph-"
+# Top-level folders no rollback may ever remove, whatever a variable expanded to.
+# no-tmp: ok — a list of folders the rollback refuses to delete, not scratch space
+BLACKBOX_PROTECTED_ROOTS="/Users /home /root /usr /etc /var /opt /tmp /private /Applications /Library /System /bin /sbin"
+
+# Paths removed on rollback only when this run created them; when they already existed
+# they are left exactly as they are (their changed files are in install_rewritten_files).
+install_created_paths() {
+    printf '%s\n' "$BLACKBOX_INSTALL_ROOT" "$HERMES_HOME" "$BLACKBOX_HOME" "$HOME/.nvm" \
+        "$HOME/.local/bin/hermes" "$HOME/.local/bin/blackbox"
+}
+
+# Files (and the small plugin folder) this run may rewrite: copied before the first change
+# and put back on rollback; removed on rollback when they did not exist.
+install_rewritten_files() {
+    local name label
+    printf '%s\n' "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.profile" \
+        "$HERMES_HOME/config.yaml" "$HERMES_HOME/.env" "$HERMES_HOME/plugins/blackbox" \
+        "$BLACKBOX_DKG_HOME/config.json" \
+        "$BLACKBOX_DKG_CLI_DIR/package.json" "$BLACKBOX_DKG_CLI_DIR/package-lock.json"
+    for label in $BLACKBOX_LAUNCHD_LABELS; do
+        printf '%s\n' "$HOME/Library/LaunchAgents/$label.plist"
+    done
+    for name in $BLACKBOX_SERVICE_NAMES; do
+        printf '%s\n' "$HOME/.config/systemd/user/$name.service" "$BLACKBOX_SYSTEMD_DIR/$name.service"
+    done
+}
+
+install_path_exists() {
+    [ -e "$1" ] || [ -L "$1" ]
+}
+
+# Whether rollback may delete PATH: absolute, at least two levels deep, never $HOME or a
+# protected top-level folder. A guard against an empty or wrong variable, not a policy.
+install_path_removable() {
+    local path="$1" root
+    case "$path" in
+        /*/*) ;;
+        *) return 1 ;;
+    esac
+    path="${path%/}"
+    [ "$path" != "$HOME" ] || return 1
+    for root in $BLACKBOX_PROTECTED_ROOTS; do
+        [ "$path" != "$root" ] || return 1
+    done
+    return 0
+}
+
+# Record PATH before the first change. A missing path is recorded as its top-most missing
+# folder too (~/.local when even that is missing), so rollback leaves no empty folders behind.
+install_record_note() {
+    local path="$1" kind="$2" copy top
+    if ! install_path_exists "$path"; then
+        top="$path"
+        while ! install_path_exists "$(dirname "$top")" && install_path_removable "$(dirname "$top")"; do
+            top="$(dirname "$top")"
+        done
+        printf '%s\n' "$top" >>"$INSTALL_RECORD_DIR/absent"
+        [ "$top" = "$path" ] || printf '%s\n' "$path" >>"$INSTALL_RECORD_DIR/absent"
+    elif [ "$kind" = rewritten ]; then
+        copy="$INSTALL_RECORD_DIR/copies/$(printf '%s' "$path" | cksum | cut -d' ' -f1)"
+        if cp -pRP "$path" "$copy" 2>/dev/null; then
+            printf '%s\t%s\n' "$path" "$copy" >>"$INSTALL_RECORD_DIR/saved"
+        fi
+    fi
+}
+
+# Run a command, giving up after SECONDS (macOS has no timeout(1)). Returns its exit code,
+# or non-zero when it had to be stopped.
+run_with_timeout() {
+    local seconds="$1" pid watcher rc
+    shift
+    "$@" &
+    pid=$!
+    ( sleep "$seconds"; kill "$pid" 2>/dev/null ) &
+    watcher=$!
+    wait "$pid"
+    rc=$?
+    kill "$watcher" 2>/dev/null
+    wait "$watcher" 2>/dev/null
+    return "$rc"
+}
+
+# A half-started Docker Desktop can leave `docker info` hanging; ten seconds is an answer.
+BLACKBOX_DOCKER_PROBE_SECONDS=10
+docker_answers() {
+    command -v docker >/dev/null 2>&1 &&
+        run_with_timeout "$BLACKBOX_DOCKER_PROBE_SECONDS" docker info >/dev/null 2>&1
+}
+
+# Names of Docker containers and volumes that look like a DKG store, one per line.
+blackbox_store_docker_objects() {
+    docker_answers || return 0
+    docker ps -a --format '{{.Names}}' 2>/dev/null | grep "^$BLACKBOX_STORE_CONTAINER_PREFIX" | sed 's/^/container /'
+    docker volume ls --format '{{.Name}}' 2>/dev/null | grep "^$BLACKBOX_STORE_CONTAINER_PREFIX" | sed 's/^/volume /'
+}
+
+install_record_begin() {
+    local path
+    INSTALL_RECORD_DIR="$(mktemp -d)"
+    mkdir -p "$INSTALL_RECORD_DIR/copies"
+    : >"$INSTALL_RECORD_DIR/absent"
+    : >"$INSTALL_RECORD_DIR/saved"
+    : >"$INSTALL_RECORD_DIR/started-pids"
+    while IFS= read -r path; do install_record_note "$path" created; done < <(install_created_paths)
+    while IFS= read -r path; do install_record_note "$path" rewritten; done < <(install_rewritten_files)
+    blackbox_store_docker_objects >"$INSTALL_RECORD_DIR/docker-before" || true
+    if [ -d "$BLACKBOX_USER_BIN_DIR" ]; then
+        ls -A "$BLACKBOX_USER_BIN_DIR" >"$INSTALL_RECORD_DIR/user-bin-before"
+    fi
+    if [ -d "$BLACKBOX_INSTALL_ROOT/.git" ]; then
+        git -C "$BLACKBOX_INSTALL_ROOT" rev-parse -q --verify HEAD >"$INSTALL_RECORD_DIR/repo-head" 2>/dev/null || true
+    fi
+    # Blackbox's own node, not whatever else answers on its port (a foreign node is moved off).
+    if blackbox_has_dkg_state && blackbox_dkg_answers 2>/dev/null; then
+        : >"$INSTALL_RECORD_DIR/node-was-running"
+    fi
+    if [ -n "${USER:-}" ] && [ -e "$BLACKBOX_LINGER_DIR/$USER" ]; then
+        : >"$INSTALL_RECORD_DIR/linger-was-on"
+    fi
+    trap install_record_on_exit EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+}
+
+# A process this run started outside any service (the dashboard before its service exists, a
+# direct node start) — stopped on rollback. Only pids recorded here are ever signalled.
+install_record_started_pid() {
+    [ -n "$INSTALL_RECORD_DIR" ] && [ -n "${1:-}" ] || return 0
+    printf '%s\n' "$1" >>"$INSTALL_RECORD_DIR/started-pids"
+}
+
+install_record_commit() {
+    INSTALL_RECORD_COMMITTED=true
+    trap - EXIT INT TERM
+    [ -n "$INSTALL_RECORD_DIR" ] && rm -rf "$INSTALL_RECORD_DIR"
+    INSTALL_RECORD_DIR=""
+}
+
+install_record_on_exit() {
+    local code=$?
+    trap - EXIT INT TERM
+    if [ -n "$INSTALL_RECORD_DIR" ] && [ "$INSTALL_RECORD_COMMITTED" != true ]; then
+        [ "$code" -ne 0 ] || code=1
+        set +e
+        rollback_install
+        rm -rf "$INSTALL_RECORD_DIR"
+    fi
+    exit "$code"
+}
+
+rollback_install() {
+    echo ""
+    err "Blackbox was not installed. Putting this machine back the way it was ..."
+    rollback_stop_started
+    rollback_services
+    rollback_docker_store
+    rollback_docker_desktop
+    rollback_files
+    rollback_repo_head
+    rollback_restart_previous
+    rollback_restart_dashboard
+    ok "Nothing from this install attempt was left behind."
+    step "Fix the reason shown above, then run the installer again."
+}
+
+rollback_stop_started() {
+    local pid
+    while IFS= read -r pid; do
+        [ -n "$pid" ] && kill "$pid" 2>/dev/null
+    done <"$INSTALL_RECORD_DIR/started-pids"
+    if [ ! -e "$INSTALL_RECORD_DIR/node-was-running" ] && [ -x "$BLACKBOX_DKG_BIN" ]; then
+        blackbox_dkg_control stop >/dev/null 2>&1
+        blackbox_dkg stop >/dev/null 2>&1
+    fi
+}
+
+install_record_was_absent() {
+    grep -qxF -- "$1" "$INSTALL_RECORD_DIR/absent"
+}
+
+# Unregister every service whose definition this run created (its file comes off in
+# rollback_files). A service that existed before keeps running; its file is restored.
+rollback_services() {
+    local label name unit
+    for label in $BLACKBOX_LAUNCHD_LABELS; do
+        if install_record_was_absent "$HOME/Library/LaunchAgents/$label.plist" &&
+            command -v launchctl >/dev/null 2>&1; then
+            launchctl bootout "gui/$(id -u)/$label" >/dev/null 2>&1
+        fi
+    done
+    command -v systemctl >/dev/null 2>&1 || return 0
+    for name in $BLACKBOX_SERVICE_NAMES; do
+        unit="$HOME/.config/systemd/user/$name.service"
+        if install_record_was_absent "$unit" && [ -e "$unit" ]; then
+            systemctl --user disable --now "$name" >/dev/null 2>&1
+        fi
+        unit="$BLACKBOX_SYSTEMD_DIR/$name.service"
+        if install_record_was_absent "$unit" && [ -e "$unit" ]; then
+            systemctl disable --now "$name" >/dev/null 2>&1
+        fi
+    done
+    systemctl --user daemon-reload >/dev/null 2>&1
+    [ -w "$BLACKBOX_SYSTEMD_DIR" ] && systemctl daemon-reload >/dev/null 2>&1
+    if [ ! -e "$INSTALL_RECORD_DIR/linger-was-on" ] && [ -n "${USER:-}" ] &&
+        [ -e "$BLACKBOX_LINGER_DIR/$USER" ] && command -v loginctl >/dev/null 2>&1; then
+        loginctl disable-linger "$USER" >/dev/null 2>&1
+    fi
+    return 0
+}
+
+# Remove the Docker store containers and volumes this run created (never one that existed).
+rollback_docker_store() {
+    local kind name
+    docker_answers || return 0
+    blackbox_store_docker_objects | while read -r kind name; do
+        grep -qxF -- "$kind $name" "$INSTALL_RECORD_DIR/docker-before" && continue
+        case "$kind" in
+            container) docker rm -f "$name" >/dev/null 2>&1 ;;
+            volume) docker volume rm -f "$name" >/dev/null 2>&1 ;;
+        esac
+    done
+    return 0
+}
+
+# Docker Desktop that this run opened is closed again (its store containers are already gone).
+rollback_docker_desktop() {
+    [ "${BLACKBOX_OPENED_DOCKER_DESKTOP:-false}" = true ] || return 0
+    osascript -e 'quit app "Docker"' >/dev/null 2>&1
+    return 0
+}
+
+# Put back every rewritten file, then remove every path that did not exist, deepest first.
+rollback_files() {
+    local path copy
+    while IFS="$(printf '\t')" read -r path copy; do
+        if [ -z "$path" ] || ! install_path_removable "$path"; then
+            continue
+        fi
+        rm -rf "$path"
+        mkdir -p "$(dirname "$path")"
+        cp -pRP "$copy" "$path" || warn "Could not restore $path (a copy is in $copy)."
+    done <"$INSTALL_RECORD_DIR/saved"
+    # New commands in a command folder that already existed (a folder this run created is
+    # in the absent list and goes as a whole).
+    if [ -f "$INSTALL_RECORD_DIR/user-bin-before" ] && [ -d "$BLACKBOX_USER_BIN_DIR" ]; then
+        ls -A "$BLACKBOX_USER_BIN_DIR" | while IFS= read -r name; do
+            grep -qxF -- "$name" "$INSTALL_RECORD_DIR/user-bin-before" || rm -rf "${BLACKBOX_USER_BIN_DIR:?}/$name"
+        done
+    fi
+    sort -r "$INSTALL_RECORD_DIR/absent" | while IFS= read -r path; do
+        if install_path_removable "$path"; then
+            rm -rf "$path"
+        fi
+    done
+    return 0
+}
+
+# An existing checkout that this run moved to a new commit goes back to the commit it had.
+rollback_repo_head() {
+    local before
+    [ -s "$INSTALL_RECORD_DIR/repo-head" ] && [ -d "$BLACKBOX_INSTALL_ROOT/.git" ] || return 0
+    before="$(cat "$INSTALL_RECORD_DIR/repo-head")"
+    [ "$(git -C "$BLACKBOX_INSTALL_ROOT" rev-parse -q --verify HEAD 2>/dev/null)" = "$before" ] && return 0
+    git -C "$BLACKBOX_INSTALL_ROOT" reset -q --keep "$before" 2>/dev/null ||
+        warn "Could not move $BLACKBOX_INSTALL_ROOT back to ${before:0:12}."
+    return 0
+}
+
+# An upgrade whose node was running before runs again on its restored settings.
+rollback_restart_previous() {
+    [ -e "$INSTALL_RECORD_DIR/node-was-running" ] || return 0
+    blackbox_dkg_control restart >/dev/null 2>&1 || blackbox_dkg start >/dev/null 2>&1 ||
+        warn "Could not restart the Blackbox DKG node that was running before."
+    return 0
+}
+
+# A dashboard service that existed before this run is restarted once the files are back:
+# it may have loaded this run's code, and would keep running it beside the restored plugin
+# copy (KI-455). A service this run created is already gone (rollback_services + files).
+rollback_restart_dashboard() {
+    local supervisor
+    supervisor="$(blackbox_dashboard_supervisor)"
+    [ -n "$supervisor" ] || return 0
+    blackbox_dashboard_control reload "$supervisor" >/dev/null 2>&1 ||
+        warn "Could not restart the Blackbox dashboard; restart its $supervisor service."
+    return 0
 }
 
 # ── Main ────────────────────────────────────────────────────────────────────
@@ -2626,11 +3192,14 @@ register_dashboard_service() {
     case "$(uname -s)" in
         Linux)
             command -v systemctl >/dev/null 2>&1 || return 0   # register_boot_service already warned
-            local unit=/etc/systemd/system/blackbox-dashboard.service
+            local unit=/etc/systemd/system/blackbox-dashboard.service before="" start_action=start
+            local -a systemctl_cmd=(systemctl)
             if [ ! -w /etc/systemd/system ] && [ "$(id -u)" != 0 ]; then
                 unit="$HOME/.config/systemd/user/blackbox-dashboard.service"
+                systemctl_cmd+=(--user)
                 mkdir -p "$(dirname "$unit")"
             fi
+            [ -f "$unit" ] && before="$(cat "$unit")"
             cat > "$unit" <<DASHUNIT
 [Unit]
 Description=Agent Blackbox dashboard (rule refresh + community pulse)
@@ -2649,22 +3218,29 @@ RestartSec=10
 [Install]
 WantedBy=multi-user.target default.target
 DASHUNIT
-            if [ "$unit" = /etc/systemd/system/blackbox-dashboard.service ]; then
-                # --now: the dashboard runs under systemd from this moment (restarted
-                # on a crash), not only after the next reboot; it replaces the one
-                # the installer just launched on the same port.
-                systemctl daemon-reload && systemctl enable --now blackbox-dashboard >/dev/null 2>&1 \
-                    && ok "systemd service registered (blackbox-dashboard) — protection stays current after reboots" \
-                    || warn "could not enable blackbox-dashboard; enable manually: systemctl enable blackbox-dashboard"
+            # Enabled AND started: the dashboard runs under systemd from this moment (restarted
+            # on a crash), not only after the next reboot; on a first install it replaces the
+            # copy the installer launched on the same port. A running service keeps the code
+            # and unit it started with, so after an update or a changed unit it is RESTARTED —
+            # through systemd only (KI-455). verify_install waits for it to answer.
+            if [ "$BLACKBOX_DASHBOARD_RESTART_PENDING" = true ] || [ "$(cat "$unit")" != "$before" ]; then
+                start_action=restart
+            fi
+            if "${systemctl_cmd[@]}" daemon-reload && "${systemctl_cmd[@]}" enable blackbox-dashboard >/dev/null 2>&1 &&
+                "${systemctl_cmd[@]}" "$start_action" blackbox-dashboard >/dev/null 2>&1; then
+                if [ "$unit" = /etc/systemd/system/blackbox-dashboard.service ]; then
+                    ok "systemd service registered (blackbox-dashboard) — protection stays current after reboots"
+                else
+                    ok "systemd user service registered (blackbox-dashboard)"
+                fi
             else
-                systemctl --user daemon-reload && systemctl --user enable --now blackbox-dashboard >/dev/null 2>&1 \
-                    && ok "systemd user service registered (blackbox-dashboard)" \
-                    || warn "could not enable the dashboard user service; enable manually: systemctl --user enable blackbox-dashboard"
+                warn "could not enable blackbox-dashboard; enable manually: ${systemctl_cmd[*]} enable --now blackbox-dashboard"
             fi
             ;;
         Darwin)
-            local plist="$HOME/Library/LaunchAgents/ai.umanitek.blackbox-dashboard.plist"
+            local plist="$HOME/Library/LaunchAgents/$BLACKBOX_DASHBOARD_LAUNCHD_LABEL.plist" before="" action=""
             mkdir -p "$HOME/Library/LaunchAgents"
+            [ -f "$plist" ] && before="$(cat "$plist")"
             cat > "$plist" <<DASHPLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -2681,9 +3257,24 @@ DASHUNIT
   <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
 </dict></plist>
 DASHPLIST
-            # Registered for the next login only: the dashboard started above keeps
-            # running now, and loading the agent here would start a second one.
-            ok "LaunchAgent registered (blackbox-dashboard) — starts at your next login"
+            if [ "$(blackbox_dashboard_supervisor)" != launchd ]; then
+                # Registered for the next login only: the dashboard started above keeps
+                # running now, and loading the agent here would start a second one.
+                ok "LaunchAgent registered (blackbox-dashboard) — starts at your next login"
+                return 0
+            fi
+            # Loaded: the agent runs the dashboard now. It takes a rewritten plist only when
+            # reloaded, and new code only when restarted — both through launchd (KI-455).
+            if [ "$(cat "$plist")" != "$before" ]; then
+                action=reload
+            elif [ "$BLACKBOX_DASHBOARD_RESTART_PENDING" = true ]; then
+                action=restart
+            fi
+            if [ -z "$action" ] || blackbox_dashboard_control "$action" launchd >/dev/null 2>&1; then
+                ok "LaunchAgent registered (blackbox-dashboard) — the dashboard runs under it"
+            else
+                warn "could not restart the dashboard's LaunchAgent; run: launchctl kickstart -k gui/$(id -u)/$BLACKBOX_DASHBOARD_LAUNCHD_LABEL"
+            fi
             ;;
     esac
 }
@@ -3014,6 +3605,8 @@ main() {
     banner
     heading "Checking your system"
     detect_os
+    install_record_begin
+    preflight_install
     if [ "$BLACKBOX_SETUP_ONLY" = true ]; then
         ensure_node
         use_running_hermes
@@ -3042,10 +3635,9 @@ main() {
     register_curate_watch
     register_lab_tunnel
     register_key_console
+    verify_install
+    install_record_commit
     next_steps
-    if [ "$BLACKBOX_INSTALL_INCOMPLETE" = true ]; then
-        exit 1
-    fi
 }
 
 main "$@"

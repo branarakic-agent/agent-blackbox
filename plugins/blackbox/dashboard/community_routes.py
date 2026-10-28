@@ -24,6 +24,7 @@ community pulse beats while the dashboard runs even with no browser open (KI-283
 from __future__ import annotations
 
 import json
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
@@ -84,14 +85,13 @@ def community_stats_payload(verified_reports: VerifiedReportsRead) -> Any:
     """The launch instruments: contributing agents, corroboration, health."""
     from .. import community, ruleset
     from ..kernel.config import load_blackbox_config
-    from ..kernel.dkg_client import DkgClient
 
     cfg = load_blackbox_config()
     rs = ruleset.peek(cfg)
     community_rules = getattr(rs, "community", {}) or {}
     now = time.time()
-    graph = str(getattr(cfg, "community_graph_id", "") or "")
-    join = community.read_join_state(DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home), graph) if graph else None
+    graph = str(getattr(cfg, "context_graph_id", "") or "")   # the community lives in the verified graph's shared memory
+    status = MEMBERSHIP_STATUS.read(cfg) if graph else None
     corroborated = sum(1 for r in community_rules.values() if int(r.get("reporterCount") or 0) >= 2)
     # Reports-today from OUR ingest observations (KI-012), not
     # reporter-supplied timestamps.
@@ -102,7 +102,7 @@ def community_stats_payload(verified_reports: VerifiedReportsRead) -> Any:
     )
     ledger = sanitized_ledger(1)
     stats = {
-        "configured": bool(getattr(cfg, "community_graph_id", "")),
+        "configured": bool(graph),
         "sharing_enabled": community.consent.sharing_on(cfg),
         "paused": bool(getattr(rs, "community_paused", False)),
         "community_threats": len(community_rules),
@@ -110,14 +110,18 @@ def community_stats_payload(verified_reports: VerifiedReportsRead) -> Any:
         "new_today": fresh_today,
         "last_refresh": rs.synced_at or None,
         "last_share": ledger[0] if ledger else None,
-        # distinct VERIFIED signers (R0d); None when no community graph is configured
-        "contributing_agents": community.contributing_agent_count(verified_reports(cfg)) if cfg.community_graph_id else None,
+        # distinct VERIFIED signers (R0d); None when no graph is configured
+        "contributing_agents": community.contributing_agent_count(verified_reports(cfg)) if graph else None,
         # which graph this node joined and whether it is connected yet (2026-10-12: a new
         # install saw "some community graph" and a "not authorized" log line with no explanation)
         "graph": safe_text(graph.rsplit("/", 1)[-1], 80) if graph else None,
         "graph_id": safe_text(graph, 200) if graph else None,
-        "join_state": join.value if join else None,
-        "join_text": community.JOIN_STATE_TEXT[join] if join else None,
+        "join_state": status.join.value if status else None,
+        "join_text": community.JOIN_STATE_TEXT[status.join] if status else None,
+        # has the graph's owner admitted this node (2026-10-21: the founder asked for a
+        # check mark — a member waiting for approval has its warnings silently dropped)
+        "admission": status.admission.value if status else None,
+        "admission_text": community.ADMISSION_TEXT[status.admission] if status else None,
     }
 
     return stats
@@ -129,10 +133,10 @@ def reports_payload(verified_reports: VerifiedReportsRead, limit: int) -> Any:
     from ..kernel.config import load_blackbox_config
 
     # B7 (KI-006): the dead code lives — community corroboration board,
-    # served from the COMMUNITY graph, plus this node's own outbound
+    # served from the community's shared memory, plus this node's own outbound
     # ledger so 'what did I contribute' is one call.
     cfg = load_blackbox_config()
-    if not getattr(cfg, "community_graph_id", ""):
+    if not getattr(cfg, "context_graph_id", ""):
         return {
             "reports": [],
             "sharing_enabled": community.consent.sharing_on(cfg),
@@ -162,7 +166,7 @@ def community_statements_payload(community_read: CommunityReadSource) -> dict[st
     from ..kernel.config import load_blackbox_config
 
     cfg = load_blackbox_config()
-    if not getattr(cfg, "community_graph_id", ""):
+    if not getattr(cfg, "context_graph_id", ""):
         return {"configured": False}
     read = community_read(cfg)
     if read is None:
@@ -207,21 +211,70 @@ def _curator_payload(view: Any) -> dict[str, Any]:
     }
 
 
+class MembershipStatusCache:
+    """This node's standing with the community graph (connected? admitted?), read at most once
+    per :attr:`TTL_SECONDS` and shared by the Community card and the health banner — the node's
+    listing is its most expensive call, and both poll every few seconds. One lock."""
+
+    TTL_SECONDS = 30.0
+
+    def __init__(self, clock: Callable[[], float] = time.monotonic) -> None:
+        self._clock = clock
+        self._lock = threading.Lock()
+        self._graph = ""
+        self._at = -1e9
+        self._status: Any = None
+
+    def read(self, cfg: Any) -> Any:
+        """A ``community.MembershipStatus`` for ``cfg.context_graph_id`` (cached)."""
+        from .. import community
+        from ..kernel.dkg_client import DkgClient
+
+        graph = str(getattr(cfg, "context_graph_id", "") or "")
+        with self._lock:
+            if graph == self._graph and self._clock() - self._at < self.TTL_SECONDS:
+                return self._status
+        status = community.read_membership_status(DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home, config=cfg), graph)
+        with self._lock:
+            self._graph, self._at, self._status = graph, self._clock(), status
+        return status
+
+    def clear(self) -> None:
+        """Forget the reading (tests, and a changed graph setting read at once)."""
+        with self._lock:
+            self._graph, self._at, self._status = "", -1e9, None
+
+
+#: The dashboard process's membership reading (see :class:`MembershipStatusCache`).
+MEMBERSHIP_STATUS = MembershipStatusCache()
+
+
+def _admission_value(cfg: Any) -> str:
+    """The admission state for the health banner, "" when no graph is configured."""
+    if not getattr(cfg, "context_graph_id", ""):
+        return ""
+    status = MEMBERSHIP_STATUS.read(cfg)
+    return status.admission.value if status is not None else ""
+
+
 def health_payload(community_read: CommunityReadSource, node_reachable: Callable[[Any], bool]) -> dict[str, Any]:
     """R10: the operator's health items from the same inputs `blackbox status` uses."""
     from .. import audit, community, ruleset
     from ..kernel import health
     from ..kernel.config import load_blackbox_config
+    from . import sync_meter
 
     cfg = load_blackbox_config()
     ruleset.pulse(cfg)   # R16: the dashboard is a long-lived process — its health poll keeps the pulse going
     rs = ruleset.peek(cfg)
-    read = community_read(cfg) if getattr(cfg, "community_graph_id", "") else None
+    read = community_read(cfg) if getattr(cfg, "context_graph_id", "") else None
     retries = community.share_retry_stats()
     inputs = health.gather(cfg, rs, node_reachable(cfg), read, audit.blocked_counts_by_identifier(), time.time(),
                            pending_shares=retries.pending, shares_given_up=retries.given_up,
                            sharing_consent_problem=community.consent.why_not(),
-                           verified_lookup_problem=ruleset.live.HEALTH.read().problem())
+                           verified_lookup_problem=ruleset.live.HEALTH.read().problem(),
+                           first_sync=sync_meter.WATCH.first_sync(),
+                           admission=_admission_value(cfg))
     items = health.operator_health(inputs)
     return {"items": [{**item.as_dict(), "red": health.red(item)} for item in items],
             "ruleset_age": health.ruleset_age_text(inputs.ruleset_age_s), "community_paused": inputs.community_paused}
@@ -249,7 +302,7 @@ def _node_network(cfg: Any) -> dict[str, str]:
     from ..kernel.dkg_client import DkgClient
 
     try:
-        status = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home).status(timeout=2.0)
+        status = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home, config=cfg).status(timeout=2.0)
     except Exception:   # fail open: the proof still shows the raw network id
         return {}
     return {"id": str(status.get("networkId") or ""),

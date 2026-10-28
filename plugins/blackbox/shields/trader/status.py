@@ -68,6 +68,12 @@ def _app_labels() -> dict[str, str]:
             if pack.status == "supported" and isinstance(pack.data.get("label"), str)}
 
 
+def browser_of(path: str) -> str:
+    """The browser a key-store or profile path belongs to ("Chrome", "Brave"…), or "a browser"."""
+    low = path.lower()
+    return next((label for key, label in _BROWSERS if key in low), "a browser")
+
+
 def found_wallets() -> list[dict[str, Any]]:
     """The wallets whose key stores exist on this machine, for the dashboard:
     ``[{wallet, id, browser, profile, areas: [...]}]`` (``id`` is the pack id, or

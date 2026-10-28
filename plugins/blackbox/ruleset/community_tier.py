@@ -34,21 +34,20 @@ def apply_community_tier(rs: compiler.Ruleset, client: DkgClient, cfg: BlackboxC
     ``dependency``/``ioc`` O(1) lookup dicts and the ``skill`` rules —
     identifier-equality matching, never pattern execution (KI-004). Public
     rules always win a key collision (merge precedence).
-    Injection/escalation/fileaccess community reports stay
-    display-and-corroboration only: their local detections derive the same
-    deterministic identifiers, so corroboration works without ever
-    interpreting community content.
+    Injection/escalation/fileaccess reports remain display-and-corroboration
+    only; deterministic identifiers never execute community content.
 
     *prior* is this node's previous ruleset generation (first-seen history and
     the last-good fallback); the refresh cycle passes it in.
     """
-    if not cfg.community_graph_id:
+    if not cfg.context_graph_id:
         return
+    rs.community_read_unavailable = True
     previous = dict(prior.community) if prior is not None else {}   # captured first: *prior* may be *rs* itself
     try:
         # KI-034: updated existing installs must join without a manual sync —
         # but only when the node says it is not subscribed, and at most once
-        # per retry window (R0, KI-064/114; community/membership.py).
+        # per retry window (R0, KI-064/114; community/membership/).
         community.ensure_community_subscription(client, cfg)
         # R0c/R0d: only reports whose signature verifies for THIS network and
         # graph are counted; the self-described reporter field never is.
@@ -56,6 +55,7 @@ def apply_community_tier(rs: compiler.Ruleset, client: DkgClient, cfg: BlackboxC
         if not read.available:   # could not read is never "no threats" (KI-112): keep last-good
             _keep_last_good(rs, prior)
             return
+        rs.community_read_unavailable = False
         withdrawn = _withdrawn(read)
         if (_signed_pause(rs, read) or _legacy_pause(rs, read, client, cfg)
                 or _empty_read_not_believed(rs, prior, read, previous, client, cfg)):
@@ -72,6 +72,7 @@ def apply_community_tier(rs: compiler.Ruleset, client: DkgClient, cfg: BlackboxC
             community.shadow.clamp_to_monitor(rs.community)
         materialize_community_rules(rs)
     except Exception as exc:  # pragma: no cover - fail open at the tier boundary
+        rs.community_read_unavailable = True
         logger.debug("blackbox: community tier skipped: %s", exc)
 
 

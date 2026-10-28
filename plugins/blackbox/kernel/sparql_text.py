@@ -205,3 +205,32 @@ def page_rows(client: Any, graph: str, view: str, sparql_after: Callable[[str], 
         if len(page) < page_size:
             break
     return rows
+
+
+def run_query(client, sparql, cg_id, view, on_error, agent_address, timeout, sub_graph):
+    """Execute a scoped SELECT using the caller's explicit graph trust."""
+    import logging
+    from . import constants
+    from .dkg_client import DkgError
+    logger = logging.getLogger(__name__)
+    payload = {"sparql": sparql, "contextGraphId": cg_id}
+    evidence = getattr(client, "_chain_evidence", None)
+    if evidence and cg_id == evidence[0]:
+        payload["chainEvidenceMode"] = evidence[1]
+    if view:
+        payload["view"] = view
+    if view == constants.VIEW_SHARED_WORKING_MEMORY:   # community statements live in their subgraph
+        payload["subGraphName"] = sub_graph
+    if agent_address:
+        payload["agentAddress"] = agent_address
+    try:
+        result = client.request(
+            "POST",
+            "/api/query",
+            payload,
+            timeout=timeout,
+        )
+    except DkgError as exc:
+        logger.debug("blackbox: query failed: %s", exc)
+        result = None  # a failure, reported like a malformed reply
+    return rows_or_fallback(result, on_error)

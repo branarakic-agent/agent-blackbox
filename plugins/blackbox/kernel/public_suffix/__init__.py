@@ -38,6 +38,7 @@ logger = logging.getLogger(__name__)
 
 _VENDORED = Path(__file__).with_name("public_suffix_list.dat")
 _PRIVATE_MARKER = "// ===BEGIN PRIVATE DOMAINS==="
+__all__ = ["SuffixRules", "is_shared_hosting", "load", "public_suffix", "registrable_domain"]   # the surface other modules may import
 
 
 @dataclass(frozen=True)

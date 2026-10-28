@@ -23,7 +23,7 @@ from agent.codex_responses_adapter import _chat_messages_to_responses_input
 from plugins.blackbox import audit
 from plugins.blackbox import ruleset as ruleset_mod
 from plugins.blackbox.guard import background as guard_background
-from plugins.blackbox.guard import hooks
+from plugins.blackbox.guard import api_request, hooks
 from plugins.blackbox.guard import reporting as guard_reporting
 from plugins.blackbox.kernel import config as config_mod
 from plugins.blackbox.kernel.crypto_secrets import seed_phrase
@@ -41,13 +41,16 @@ def phrase() -> str:
 
 
 def solana_export() -> str:
+    """A fresh keypair as Phantom exports it: canonical base58, one '1' per leading zero byte.
+    Without the padding a key whose seed starts with a zero byte (1 in 256) decodes to 63 bytes
+    and the verifier rightly rejects it (CI flake, run 38927008162)."""
     private = Ed25519PrivateKey.generate()
     data = private.private_bytes_raw() + private.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw)
     number, out = int.from_bytes(data, "big"), ""
     while number:
         number, digit = divmod(number, 58)
         out = BASE58[digit] + out
-    return out
+    return "1" * (len(data) - len(data.lstrip(b"\0"))) + out
 
 
 def chat(tool_name: str, output: str, ask: str = "Read the file and summarise it.") -> list[dict]:
@@ -70,7 +73,7 @@ def home(tmp_path, monkeypatch):
     monkeypatch.setattr(guard_background, "_spawn_llm_review", lambda *a, **k: None)
     monkeypatch.setattr(guard_reporting, "DkgClient", lambda **k: (_ for _ in ()).throw(OSError("no node in tests")))
     monkeypatch.setattr(trader_mode, "current", lambda: trader_mode.build(enabled=True))
-    hooks._seen_api_findings.clear()
+    api_request._seen_api_findings.clear()
     return tmp_path / "bb"
 
 

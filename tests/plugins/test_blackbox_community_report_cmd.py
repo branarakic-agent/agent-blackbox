@@ -14,6 +14,7 @@ import argparse
 
 import pytest
 
+from _blackbox_fakes import FakeNodeClient
 from plugins.blackbox import audit, cli
 from plugins.blackbox.community.report_cli import report_command
 from plugins.blackbox.kernel import constants
@@ -23,7 +24,7 @@ from plugins.blackbox.kernel.config import BlackboxConfig
 
 DEV_GRAPH = "0x51E5dE758A45c8b64048E29918421F0bdD6D5d5C/agent-blackbox-community-dev"
 REPORTER = "0xabc0000000000000000000000000000000000001"
-CFG_ON = BlackboxConfig(report=True, community_graph_id=DEV_GRAPH, daily_report_limit=50)
+CFG_ON = BlackboxConfig(report=True, context_graph_id=DEV_GRAPH, daily_report_limit=50)
 
 
 @pytest.fixture
@@ -35,28 +36,9 @@ def bb_home(monkeypatch, tmp_path):
 TEST_NETWORK = "test-network-id"
 
 
-class FakeClient:
+class FakeClient(FakeNodeClient):
     def __init__(self, fail=False):
-        self.shares = []
-        self.fail = fail
-
-    def agent_identity(self):
-        return {"agentAddress": REPORTER}
-
-    def status(self):
-        return {"networkId": TEST_NETWORK}  # real nodes always report one; signing needs it (R0b)
-
-    def share_knowledge_asset(self, cg_id, name, q, **kw):
-        if self.fail:
-            raise RuntimeError("node exploded")
-        self.shares.append((cg_id, name, q))
-        return {"state": "succeeded"}
-
-    def query(self, *a, **kw):
-        return kw.get("on_error")
-
-    def reachable(self):
-        return True
+        super().__init__(REPORTER, TEST_NETWORK, failure=RuntimeError("node exploded") if fail else None)
 
 
 #: Namespace dest -> the flag an operator types, where they differ.
@@ -171,7 +153,7 @@ def test_cooldown_short_circuits_resubmission(wired, capsys):
 def test_gate_off_is_loud_not_silent(monkeypatch, bb_home, capsys):
     monkeypatch.setattr(
         report_command, "load_blackbox_config",
-        lambda: BlackboxConfig(report=False, community_graph_id=DEV_GRAPH),
+        lambda: BlackboxConfig(report=False, context_graph_id=DEV_GRAPH),
     )
     rc = report_command.cmd_report(_args(type="ioc", ioc_type="domain", value="evil.example", context="fetched-by-tool"))
     out = capsys.readouterr().out

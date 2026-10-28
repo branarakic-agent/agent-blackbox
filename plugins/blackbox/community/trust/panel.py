@@ -20,12 +20,12 @@ Usage::
 
 from __future__ import annotations
 
-from datetime import date
-from typing import Any, Dict, List, Optional, TypedDict
+from typing import Any, Optional, TypedDict
 
 from ...kernel import display_safety
-from ...kernel.signing.statement_order import CuratorStatement
+from ...kernel.signing import CuratorStatement
 from ..statements import curator_view
+from ...kernel.health import days_between
 
 #: A curator key without a heartbeat for longer than this is shown as silent (plan §13: 48 hours).
 HEARTBEAT_SILENCE_DAYS = 2
@@ -68,7 +68,7 @@ class Confirmed(TypedDict):
 
 
 class TrustPanel(TypedDict):
-    available: bool             # False: the community graph could not be read (never "nothing is trusted")
+    available: bool             # False: the shared memory could not be read (never "nothing is trusted")
     reason: str
     authorities: list[AuthorityFacts]
     reporters: list[TrustedReporter]
@@ -76,12 +76,6 @@ class TrustPanel(TypedDict):
     held_raising: int           # raising statements this reader holds under its daily cap
     lookup_incomplete: bool     # the trust lookup was cut short
 
-
-def _days_between(earlier: str, later: str) -> int:
-    try:
-        return (date.fromisoformat(later) - date.fromisoformat(earlier)).days
-    except ValueError:
-        return 0
 
 
 def _authority(name: str, view: Optional[Any], today: str) -> AuthorityFacts:
@@ -91,7 +85,7 @@ def _authority(name: str, view: Optional[Any], today: str) -> AuthorityFacts:
                               keys=0, threshold=0, heartbeats=[])
     state = "conflict" if view.manifest_conflict else "unavailable" if view.unavailable else (view.manifest_state or "ok")
     beats = [Heartbeat(key=key, day=view.heartbeats.get(key, ""),
-                       silent=not view.heartbeats.get(key) or _days_between(view.heartbeats[key], today) > HEARTBEAT_SILENCE_DAYS)
+                       silent=not view.heartbeats.get(key) or days_between(view.heartbeats[key], today) > HEARTBEAT_SILENCE_DAYS)
              for key in (manifest.curator_keys if manifest is not None else ())]
     return AuthorityFacts(
         authority=name, trusted=manifest is not None, state=state, state_day=view.manifest_state_day,

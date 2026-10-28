@@ -45,7 +45,7 @@ from pathlib import Path
 from typing import Dict, List, Mapping, Optional, Tuple
 
 from ...kernel.signing import key_manifest
-from ...kernel.signing.key_manifest import KeyManifest
+from ...kernel.signing import KeyManifest
 from .. import keys
 
 STATE_FILE = "console_state.json"

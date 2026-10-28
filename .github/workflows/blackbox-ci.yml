@@ -1,0 +1,72 @@
+name: Blackbox CI
+
+# The Blackbox plugin's own lane. ci.yaml calls it when a pull request touches
+# only the plugin's files (the ``blackbox_only`` lane of
+# scripts/ci/classify_changes.py) and forces every host lane off: the host suites
+# cannot observe a plugin change, and they are most of a CI run's minutes.
+#
+# One Linux runner: the Blackbox suite (tests/**/test_blackbox_*.py — the catalog
+# admission test inside it runs ``hermes plugins validate``) and the blocking
+# lints that ``scripts/check`` runs for the lint lane, judged against the base.
+
+on:
+  workflow_call:
+    inputs:
+      commit:
+        description: Commit to test. Empty keeps the triggering commit.
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  blackbox:
+    name: Blackbox suite + lints
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@f548e57e544e1ff5a4c46bf1e1b8685f8e4a348a # v7.0.1
+        with:
+          ref: ${{ inputs.commit }}
+          fetch-depth: 2 # the merge commit and its first parent (the base branch tip)
+
+      - name: Set up locked Python and test dependencies
+        id: setup
+        uses: ./.github/actions/setup-pm
+        with:
+          extras: '[]'
+          test-environment: 'true'
+          prune-python-cache: true
+
+      - name: Install Blackbox's test-only packages
+        # rdflib backs the in-memory graph store five Blackbox tests stand in for the
+        # node with; the plugin never imports it. Hermes' lock pulls it only through the
+        # text-to-speech extra, so it is installed here (same version as uv.lock) rather
+        # than by editing Hermes' pyproject (upstream-first, Amos 2026-10-28).
+        uses: ./.github/actions/retry
+        with:
+          command: uv pip install --python "${{ steps.setup.outputs.python-path }}" "rdflib==7.6.0"
+
+      - name: Blackbox suite
+        # scripts/run_tests.sh — the canonical runner, as every Hermes lane uses:
+        # one pytest subprocess per file (isolated HERMES_HOME, no state leaking
+        # between files), one worker per core. Bare pytest over the whole suite
+        # in one process failed six tests that pass under this runner.
+        run: |
+          set -euo pipefail
+          SEPARATOR="$(python -c 'import os, sys; sys.stdout.write(os.pathsep)')"
+          FILES="$(ls tests/plugins/test_blackbox_*.py tests/test_blackbox_*.py | paste -sd "$SEPARATOR" -)"
+          scripts/run_tests.sh --files "$FILES" -- -q --tb=short
+
+      - name: Install pinned ruff
+        uses: ./.github/actions/retry
+        with:
+          command: python -m scripts.ci.python_packages "$(python -m scripts.code_health --print-pins)"
+
+      - name: Blocking lints against the base branch tip
+        run: python scripts/check --base HEAD^1
+
+      - name: Check the checkout is clean
+        uses: ./.github/actions/check-clean-worktree

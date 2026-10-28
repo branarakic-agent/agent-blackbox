@@ -23,6 +23,7 @@ Safety:
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -49,6 +50,10 @@ MAX_VALUES = 4000
 ROW_LIMIT = 20_000
 #: EVM addresses per call also asked for in their EIP-55 spelling (~0.3 ms each).
 CHECKSUM_SPELLINGS = 64
+#: While the store is degraded, one lookup probes it at most this often; the rest answer
+#: could-not-tell at once. Why: a wedged store (port open, not answering — the restart-recovery
+#: window) otherwise costs every tool call the 2 s timeout per chunk, dependency and IOC each.
+RETRY_AFTER_SECONDS = 10.0
 
 _DP = "urn:defender:p:"
 _BP = "urn:blackbox:p:"
@@ -106,11 +111,25 @@ class VerifiedLookup:
     def _run(self, items: Sequence[Any], build_query: Any, category: str) -> LookupAnswer:
         if not items:
             return LookupAnswer({}, CLEAN)
-        answer = self._ask(items, build_query, category)
-        self.health.record(answer.known, answer.reason)        # the STORE's health, whatever answers next
+        skipped = None if not self.scope.ready else self._while_degraded()   # not-ready is its own answer, recorded as before
+        if skipped is not None:
+            answer = skipped                                   # the breaker: not asked, not recorded
+        else:
+            answer = self._ask(items, build_query, category)
+            self.health.record(answer.known, answer.reason)    # the STORE's health, whatever answers next
         if not answer.known and self.fallback is not None:
             return self._from_fallback(items, category, answer)
         return answer
+
+    def _while_degraded(self) -> Optional[LookupAnswer]:
+        """The could-not-tell answer to give without asking, while the store is degraded
+        and its last probe is younger than :data:`RETRY_AFTER_SECONDS`; None = ask."""
+        state = self.health.read()
+        if not state.degraded or time.time() - state.last_at >= RETRY_AFTER_SECONDS:
+            return None
+        return LookupAnswer({}, COULD_NOT_TELL,
+                            f"store degraded ({state.reason or 'did not answer'}); next probe in "
+                            f"{RETRY_AFTER_SECONDS:.0f} s")
 
     def _from_fallback(self, items: Sequence[Any], category: str, store_answer: LookupAnswer) -> LookupAnswer:
         """The last resort (B9): the operator-enabled index answers; hits the store

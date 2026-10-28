@@ -11,6 +11,7 @@ import logging
 import os
 from pathlib import Path
 from typing import Any, Dict
+from .bounded_files import atomic_write   # the kernel's one torn-free write (re-exported for yaml callers)
 
 logger = logging.getLogger(__name__)
 
@@ -42,19 +43,6 @@ def load_yaml(path: Path) -> dict[str, Any]:
         logger.debug("blackbox.attach: could not parse %s (%s)", path, exc)
         return {}
     return data if isinstance(data, dict) else {}
-
-
-def atomic_write(path: Path, text: str) -> None:
-    """Write *text* via a temp file + rename so a reader never sees a torn file.
-
-    A concurrent auto-attach sweep (or the dashboard reading a config) can race a
-    write; ``os.replace`` is atomic on the same filesystem, so readers always see
-    either the old or the new complete file, never a half-written one.
-    """
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}")
-    tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, path)
 
 
 def dump_yaml(path: Path, data: dict[str, Any]) -> None:

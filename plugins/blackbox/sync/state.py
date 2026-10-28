@@ -6,11 +6,12 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 import psutil
 
 from ..kernel import constants
+from ..kernel.bounded_files import atomic_write
 
 _STALE_RUNNING_SECONDS = 3_600
 
@@ -51,9 +52,7 @@ def write(status: str, **details: Any) -> dict[str, Any]:
                 state[key] = previous[key]
     if status == "running" and previous.get("status") != "running":
         state["started_at"] = now
-    tmp = path.with_suffix(f".tmp-{os.getpid()}")
-    tmp.write_text(json.dumps(state, sort_keys=True), encoding="utf-8")
-    os.replace(tmp, path)
+    atomic_write(path, json.dumps(state, sort_keys=True))
     return state
 
 

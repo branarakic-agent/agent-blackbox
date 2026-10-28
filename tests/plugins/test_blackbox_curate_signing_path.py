@@ -22,7 +22,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from plugins.blackbox import killlist
 from plugins.blackbox.curate import verbs
 from plugins.blackbox.curate.context import KillListDraft, ManifestDraft, PromotionDraft, StatementDraft
-from plugins.blackbox.curate.proposal import ProposalStore
+from plugins.blackbox.curate.proposals.proposal import ProposalStore
 from plugins.blackbox.curate.watch import SigningLog, SigningRow
 from plugins.blackbox.kernel import signing
 from plugins.blackbox.kernel.signing.statement_order import CuratorStatement

@@ -242,7 +242,7 @@ def test_the_job_file_is_private(store, tmp_path):
 
 from pathlib import Path
 
-from plugins.blackbox.curate.consent import ConsentLedger
+from plugins.blackbox.curate.proposals.consent import ConsentLedger
 from plugins.blackbox.curate.lab import commands as lab_commands
 from plugins.blackbox.curate.lab import trigger
 from plugins.blackbox.curate.lab.trigger import LabCandidate, LabRequests, LabSetup, SubmissionStatus

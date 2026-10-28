@@ -1,9 +1,10 @@
 """``blackbox sync`` — bring this node's copy of the verified graph up to date.
 
 Drives the local node's catch-up of the verified graph (curator peer first,
-generic peers as fallback), joins the community graph, then compiles the
-ruleset. ``_cmd_sync_impl`` and ``_catchup_authoritative_vm`` are the two
-long functions quality item G4 will turn into an explicit state machine.
+generic peers as fallback; the subscription includes the shared memory the
+community's reports live in), then compiles the ruleset. ``_cmd_sync_impl``
+and ``_catchup_authoritative_vm`` are the two long functions quality item G4
+will turn into an explicit state machine.
 """
 
 from __future__ import annotations
@@ -25,18 +26,18 @@ from ..kernel.config import BlackboxConfig, load_blackbox_config
 from ..kernel.dkg_client import DkgClient, DkgError
 from .progress import apply_completion_contract, capture_durable_progress_cursor, read_durable_progress
 from ..kernel import display_safety
-from . import managed_node, native, side_subscriptions
+from . import managed_node, native, direct_preflight, side_subscriptions
 from .catchup_job import _catchup_denied, _catchup_job_id, _catchup_status
 
 logger = logging.getLogger(__name__)
-
 _MAX_EMPTY_PUBLIC_PASSES = 3
-
 
 def cmd_sync(args: argparse.Namespace) -> int:
     """Run a ruleset sync, translating an interactive cancellation cleanly."""
     try:
         cfg = load_blackbox_config()
+        if not direct_preflight.valid(cfg):
+            return 2
         if managed_node._uses_managed_dkg(cfg, args):
             return _cmd_sync_with_managed_dkg(cfg, args)
         if getattr(args, "wait", False):
@@ -130,7 +131,7 @@ def _cmd_sync_with_managed_dkg(cfg: BlackboxConfig, args: argparse.Namespace) ->
     """Run foreground recovery while leaving native reconciliation resumable.
 
     A running steady-state node may already be advancing a durable checkpoint.
-    Do not restart it merely to reserve the single sync slot: the pinned request
+    Do not restart it merely to reserve a sync slot: the pinned request
     can wait behind that work, while the existing transfer keeps making progress.
     A restart is required only to repair an unreachable node or an installation
     left in the obsolete bootstrap-only mode by an interrupted older command.
@@ -169,7 +170,7 @@ def _cmd_sync_with_managed_dkg(cfg: BlackboxConfig, args: argparse.Namespace) ->
 
 def _cmd_sync_impl(args: argparse.Namespace) -> int:
     cfg = load_blackbox_config()
-    client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home)
+    client = DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home, config=cfg)
     private_graph = _should_request_private_join(cfg)
     release_graph = cfg.context_graph_id == constants.DEFAULT_CONTEXT_GRAPH_ID
     managed_graph = private_graph or release_graph
@@ -383,7 +384,7 @@ def _cmd_sync_impl(args: argparse.Namespace) -> int:
                 )
 
         may_probe_private = private_graph and not getattr(args, "wait", False)
-        # The community graph (B4) and an active successor graph (T2) ride the same sync, fail-open.
+        # An active successor graph (T2) rides the same sync, fail-open.
         side_subscriptions.ensure_side_subscriptions(client, cfg)
         if not subscribed and (admitted or not private_graph or may_probe_private):
             try:
@@ -750,11 +751,8 @@ def _cmd_sync_impl(args: argparse.Namespace) -> int:
     print(f"  {counts['injection']} injection, {counts['escalation']} escalation, "
           f"{counts['dependency']} dependency")
     print(f"  {public_count:,} public VM (curated)")
-    if cfg.community_graph_id:
-        print(f"  Community graph: {display_safety.term_safe(cfg.community_graph_id)} "
-              f"[sharing {'on' if cfg.community_enabled else 'off'}]")
-    else:
-        print("  Community graph: not configured (community sharing dormant)")
+    print(f"  Community reports: shared memory of {display_safety.term_safe(cfg.context_graph_id)} "
+          f"[sharing {'on' if cfg.community_enabled else 'off'}]")
     if not sync_complete:
         if private_graph and (pending_approval or not subscribed):
             print("  This graph is not supported; Agent Blackbox only uses its public VM graph.")

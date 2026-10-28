@@ -47,7 +47,7 @@ from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from ... import community
 from ...kernel.health import HealthItem
-from ...kernel.signing.statement_order import CuratorStatement
+from ...kernel.signing import CuratorStatement
 from .. import console, intake, verbs, watch
 from ..context import CurateContext
 from ..lab import LabController

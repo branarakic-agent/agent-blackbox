@@ -103,7 +103,7 @@ def test_the_native_profile_is_written_to_the_nodes_own_config(dkg_home):
     assert data["vmReconcilerEnabled"] is True
     assert data["vmRecoveryPrefetchEnabled"] is True
     assert data["syncOnConnectEnabled"] is True
-    assert data["syncGlobalMaxInflight"] == 1 and data["syncGlobalQueueLimit"] == 0
+    assert data["syncGlobalMaxInflight"] == 10 and data["syncGlobalQueueLimit"] == 20   # the node default (KI-449)
     assert data["name"] == "agent-blackbox"                       # unrelated keys survive
 
 
@@ -169,12 +169,18 @@ class _Rules:
 class _Node:
     """A node double: answers subscribe, and records what the observer asked."""
 
-    def __init__(self, subscribe_error=None):
+    def __init__(self, subscribe_error=None, listed=None):
         self.subscribe_error = subscribe_error
         self.subscribes = 0
+        self.listed = listed or []          # the node's listing rows: [] = graph not subscribed yet
+        self.shared_memory_asked = []       # include_shared_memory of every subscribe (KI-449)
 
-    def subscribe_context_graph(self, cg_id, **_kw):
+    def context_graphs(self):
+        return self.listed
+
+    def subscribe_context_graph(self, cg_id, **kw):
         self.subscribes += 1
+        self.shared_memory_asked.append(kw.get("include_shared_memory", True))
         if self.subscribe_error is not None:
             raise self.subscribe_error
         return {"subscribed": cg_id}

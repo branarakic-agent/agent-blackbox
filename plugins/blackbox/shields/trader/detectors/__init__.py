@@ -195,19 +195,33 @@ def expand_template(template: str) -> str:
 class _ExistingStores:
     """The key-store folders present on this machine, found by a bounded glob
     (browser folder → profile → store, then the app places and pointer key files) and
-    reused for a few minutes. One lock."""
+    reused for a few minutes. Each is kept twice: lower-cased for matching (:meth:`get`)
+    and as it is on disk (:meth:`located`, for anything that shows or names the path).
+    One lock."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._found: list[tuple[str, Owner]] = []
+        self._on_disk: list[tuple[str, Owner]] = []
         self._at = float("-inf")
 
+    def _refresh(self) -> None:
+        if time.monotonic() - self._at > _EXISTING_TTL_SECONDS:
+            self._on_disk = self._scan()
+            self._found = [(normalize_path(path), store_owner) for path, store_owner in self._on_disk]
+            self._at = time.monotonic()
+
     def get(self) -> list[tuple[str, Owner]]:
+        """``[(lower-cased store path, owner)]`` — what the matchers compare against."""
         with self._lock:
-            if time.monotonic() - self._at > _EXISTING_TTL_SECONDS:
-                self._found = self._scan()
-                self._at = time.monotonic()
+            self._refresh()
             return list(self._found)
+
+    def located(self) -> list[tuple[str, Owner]]:
+        """``[(store path as it is on disk, owner)]``, in the same order as :meth:`get`."""
+        with self._lock:
+            self._refresh()
+            return list(self._on_disk)
 
     def reset(self) -> None:
         with self._lock:
@@ -222,7 +236,7 @@ class _ExistingStores:
                 for match in glob.glob(candidate):
                     store_owner = stores.owner(match)
                     if store_owner:
-                        found.append((normalize_path(match), store_owner))
+                        found.append((match.replace("\\", "/"), store_owner))
         return found + app_matcher().existing()
 
 

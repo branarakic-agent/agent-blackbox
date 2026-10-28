@@ -17,14 +17,13 @@ Usage::
 from __future__ import annotations
 
 import json
-import os
-import secrets
 import threading
 import time
 from pathlib import Path
-from typing import Callable, Dict, Optional
+from typing import Callable, Optional
 
 from .. import keys
+from ...kernel.bounded_files import atomic_write
 
 NOT_LISTED_TTL_SECONDS = 24 * 60 * 60
 _FILE = "not_listed_cache.json"
@@ -77,6 +76,4 @@ class NotListedCache:
                 for source, listed in entries.items()}
         live = {source: listed for source, listed in live.items() if listed}
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self._path.with_name(f"{self._path.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}")
-        tmp.write_text(json.dumps(live, sort_keys=True), encoding="utf-8")
-        os.replace(tmp, self._path)
+        atomic_write(self._path, json.dumps(live, sort_keys=True))

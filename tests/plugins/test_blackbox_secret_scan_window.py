@@ -74,7 +74,11 @@ def test_each_text_is_read_on_its_own_and_types_merge_at_their_worst():
 
 
 def test_a_megabyte_is_scanned_within_bounds():
+    """The bound guards the scanner's own work (no quadratic scan), so it is measured
+    in this process's CPU time: wall-clock time also counts the moments a loaded
+    machine does not schedule the test, and failed once in the full suite (~0.045 s
+    of CPU normally, 2026-10-21)."""
     text = _filler(1_000_000) + " " + phrase()
-    started = time.perf_counter()
+    started = time.process_time()
     content_scanners.scan_secret_values(text)
-    assert time.perf_counter() - started < 1.0
+    assert time.process_time() - started < 1.0

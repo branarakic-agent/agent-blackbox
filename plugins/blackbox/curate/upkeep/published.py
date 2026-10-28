@@ -34,8 +34,8 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from ... import community
 from ...kernel import constants, signing
-from ...kernel.signing.key_manifest import KEY_MANIFEST_STATEMENT
-from ...kernel.signing.statement_order import CuratorStatement
+from ...kernel.signing import KEY_MANIFEST_STATEMENT
+from ...kernel.signing import CuratorStatement
 from .. import keys
 
 logger = logging.getLogger(__name__)

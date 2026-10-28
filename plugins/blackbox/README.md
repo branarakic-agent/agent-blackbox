@@ -608,6 +608,23 @@ blackbox sync --wait --timeout 180
 | `blackbox report --status` shows a refused share | nothing: the retry queue sends it again with backoff. A fresh node can be refused for a few minutes while it joins the graph; a node that reaches the network only through relays is refused until Blackbox has fetched the graph's definition from the publisher's node |
 | The log says `community_graph_id is ignored` (or `community_graph_peer_id`) | the setting belonged to the separate community graph, which is gone; remove it from `config.yaml` or the environment. Nothing else is needed |
 
+## Direct local graph queries (opt-in)
+
+See [Direct graph reads](docs/DIRECT_GRAPH_READS.md) for the paired DKG capability,
+configuration, compatibility limits and validation gates. Existing profiles keep
+their selected detection backend. The default compiled reader preserves community
+protections independently of the snapshot transfer path.
+
+### Core snapshot sync
+
+With released DKG 10.0.26, fresh installs and upgrades without an explicit snapshot
+choice can use **Lower RPC usage by using the DKG Core chain cache** for the shipped
+mainnet graph. The local capability admits an attempt; DKG authenticates registered
+cores and checks graph/asset identities, roots and final coverage at runtime.
+Explicit opt-outs, custom graph/source settings and sharing consent are preserved.
+See the [core snapshot sync guide](CORE_SNAPSHOT_SYNC.md) for configuration,
+compatibility and the distinction between core-cache and independent RPC evidence.
+
 ## About
 
 ![Umanitek](../../docs/umanitek-logo-footer.png)

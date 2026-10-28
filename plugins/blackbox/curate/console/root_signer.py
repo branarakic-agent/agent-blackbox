@@ -40,7 +40,7 @@ from pathlib import Path
 from typing import Callable, Iterator, Optional, Protocol, Tuple
 
 from ...kernel import signing
-from ...kernel.signing.key_manifest import KeyManifest
+from ...kernel.signing import KeyManifest
 from .. import keys
 from ..context import CurateContext, ManifestDraft
 from .root_store import EncryptedRootStore, RootStoreError

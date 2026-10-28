@@ -18,14 +18,14 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import threading
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from ...kernel import constants
+from ...kernel.bounded_files import atomic_write
 
 logger = logging.getLogger(__name__)
 
@@ -118,9 +118,7 @@ class LookupHealth:
         try:
             path = self._file()
             path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = path.with_suffix(f".tmp-{os.getpid()}")
-            tmp.write_text(json.dumps(asdict(self._state)), encoding="utf-8")
-            os.replace(tmp, path)
+            atomic_write(path, json.dumps(asdict(self._state)))
             self._written_at = now
         except OSError as exc:  # pragma: no cover - fail open: the state is still in memory
             logger.debug("blackbox: lookup state not written: %s", exc)

@@ -67,6 +67,14 @@ class HealthInputs:
     #: DKG-lookup B5: why live verified lookups are degraded ("" = answering). The
     #: caller passes ``ruleset.live.HEALTH.read().problem()`` (the kernel reads no feature).
     verified_lookup_problem: str = ""
+    #: The first verified sync, as the dashboard's progress watch sees it: "running" (its
+    #: counts are moving), "stalled", or "" (not syncing, or nobody watching — the CLI).
+    first_sync: str = ""
+    #: Whether the graph's owner has admitted this node, as the node's own listing says
+    #: (``community.Admission`` value: owner / approved / waiting / open / unknown; "" = not read).
+    admission: str = ""
+    #: Community sharing is on (``cfg.community_enabled``): a "waiting" node's shares are refused.
+    sharing_enabled: bool = False
     #: trust-and-threat-lab R1: why the shipped legacy asset list was refused ("" = fine) — the
     #: caller passes ``rs.verified_scope.legacy_refused``; the last-good asset tiers stay in force.
     legacy_list_refused: str = ""

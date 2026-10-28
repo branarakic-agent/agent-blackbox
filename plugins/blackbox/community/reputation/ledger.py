@@ -40,6 +40,7 @@ from ...kernel import constants
 from . import sealed_index
 from .bands import ReporterStanding, ReputationBand
 from .scoring import Outcome, beta_reputation
+from ...kernel.bounded_files import atomic_write
 
 logger = logging.getLogger(__name__)
 
@@ -233,10 +234,7 @@ class ReputationLedger:
 
     @staticmethod
     def _write(path: Path, text: str) -> None:
-        tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}")
-        tmp.write_text(text, encoding="utf-8")
-        os.chmod(tmp, 0o600)
-        os.replace(tmp, path)
+        atomic_write(path, text, mode=0o600)
 
     def _save(self, data: dict[str, Any]) -> None:
         try:

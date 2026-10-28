@@ -27,17 +27,20 @@ Usage::
 from __future__ import annotations
 
 import os
-from datetime import date, datetime, timezone, UTC
+from datetime import datetime, UTC
 
 from .. import constants
 # Imported under these names to match inputs.py, where HealthInputs has fields called community_authority
 # and manifest_watch.
 from . import community_authority as community_alarms
 from . import manifest_watch as manifest_watcher
+from .manifest_watch import key_fingerprint
+from .days import days_between, today_utc
 from .inputs import HealthInputs   # the facts the rules read; its own module (this file is at its size limit)
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, List, Mapping, Optional
+from typing import Any, Mapping, Optional
+__all__ = ["CURATOR_SILENCE_DAYS", "DRIFT_SHARE", "HEARTBEAT_SILENCE_DAYS", "LANE_SLA_DAYS", "NODE_INSTALL_HINT", "STALE_INTERVALS", "CuratorInputs", "HealthClass", "HealthInputs", "HealthItem", "community_authority", "curator_health", "days_between", "gather", "key_fingerprint", "manifest_watch", "node_installed", "operator_health", "red", "render_lines", "ruleset_age_text", "today_utc"]   # the surface other modules may import (test_blackbox_architecture checks it)
 
 
 class HealthClass(Enum):
@@ -96,18 +99,12 @@ def _version_tuple(text: str) -> tuple:
     return tuple(int(part) for part in text.split(".") if part.isdigit())
 
 
-def _days_between(earlier: str, later: str) -> int:
-    try:
-        return (date.fromisoformat(later) - date.fromisoformat(earlier)).days
-    except ValueError:
-        return 0
-
 
 def _trust(inputs: HealthInputs) -> list[HealthItem]:
     """R10b: the states about the curators and the trust layer (plan §12)."""
     items = []
     if inputs.curator_trusted and inputs.curators_last_day and inputs.today \
-            and _days_between(inputs.curators_last_day, inputs.today) > CURATOR_SILENCE_DAYS:
+            and days_between(inputs.curators_last_day, inputs.today) > CURATOR_SILENCE_DAYS:
         items.append(HealthItem(_OPERATOR, HealthClass.INFO, f"curators have not published since {inputs.curators_last_day}",
                                 "nothing to do — protection unchanged; verified rules still enforce"))
     if inputs.heartbeat_missing_keys:
@@ -136,7 +133,7 @@ def _trust(inputs: HealthInputs) -> list[HealthItem]:
     if inputs.manifest_state == "pending":
         items.append(HealthItem(_OPERATOR, HealthClass.INFO, f"a new curator key manifest takes effect on {inputs.manifest_state_day} (time-lock)",
                                 "nothing to do — the previous manifest stays in force until then"))
-    if inputs.manifest_expires_day and inputs.today and 0 <= _days_between(inputs.today, inputs.manifest_expires_day) <= 30:
+    if inputs.manifest_expires_day and inputs.today and 0 <= days_between(inputs.today, inputs.manifest_expires_day) <= 30:
         items.append(HealthItem(_OPERATOR, HealthClass.INFO, f"the curator key manifest expires on {inputs.manifest_expires_day}",
                                 "nothing to do — the curators publish a new manifest; rules keep enforcing either way"))
     if inputs.kill_list_refused:
@@ -156,8 +153,7 @@ def _node_and_ruleset(inputs: HealthInputs) -> list[HealthItem]:
         items.append(HealthItem(_OPERATOR, HealthClass.ACTION, f"my node is stale: {why}",
                                 "run `blackbox sync --wait`; check the DKG node is running"))
     if inputs.rule_count == 0:
-        items.append(HealthItem(_OPERATOR, HealthClass.ACTION, "UNPROTECTED: the threat ruleset is empty",
-                                "run `blackbox sync --wait` to load the threat graph"))
+        items.append(_empty_ruleset_item(inputs.first_sync))
     if inputs.verified_lookup_problem:
         items.append(HealthItem(_OPERATOR, HealthClass.ACTION,
                                 f"DEGRADED: verified rules cannot be looked up — {inputs.verified_lookup_problem}",
@@ -170,8 +166,45 @@ def _node_and_ruleset(inputs: HealthInputs) -> list[HealthItem]:
     return items
 
 
+def _empty_ruleset_item(first_sync: str) -> HealthItem:
+    """No verified rules yet. While the first sync is moving that is setting up, not an
+    alarm: INFO, saying what happens and how long it takes (founder, 2026-10-22: a red
+    "run blackbox sync --wait" over a sync already running read as broken). A stalled
+    sync, or one nobody is watching, stays the ACTION alarm."""
+    if first_sync == "running":
+        return HealthItem(_OPERATOR, HealthClass.INFO,
+                          "Setting up: Umanitek's verified threat graph is loading for the first time "
+                          "(about 30 minutes on a new machine)",
+                          "nothing to do — verified checks switch on as the rules compile; until then the "
+                          "built-in rules (protected paths, secrets, Trader Shield) protect; the Threat graph "
+                          "card shows each step")
+    if first_sync == "stalled":
+        return HealthItem(_OPERATOR, HealthClass.ACTION,
+                          "UNPROTECTED: the first sync of the verified threat graph has stopped making progress",
+                          "check the DKG node is running (`blackbox status`), then run `blackbox sync --wait`")
+    return HealthItem(_OPERATOR, HealthClass.ACTION, "UNPROTECTED: the threat ruleset is empty",
+                      "run `blackbox sync --wait` to load the threat graph")
+
+
+def _not_admitted_item(sharing_enabled: bool) -> HealthItem:
+    """The graph's owner has not admitted this node yet — or approved it but the approval has
+    not reached the node (bench 2026-10-22: approved 13 times, the allowlist never arrived, every
+    share refused). Founder: the dashboard must SAY so, not leave a silent "share failed"."""
+    message = ("not admitted to the community graph yet: the graph owner's approval has not reached "
+               "this node")
+    if sharing_enabled:
+        return HealthItem(_OPERATOR, HealthClass.ACTION, message,
+                          "anything this node shares is refused until it arrives; it keeps asking by itself — "
+                          "if this lasts more than about 30 minutes, the graph owner's node is likely unreachable "
+                          "from here. Community warnings from other members are still read and flagged")
+    return HealthItem(_OPERATOR, HealthClass.INFO, message,
+                      "nothing to do while sharing is off — community warnings are still read and flagged")
+
+
 def _community(inputs: HealthInputs) -> list[HealthItem]:
     items = []
+    if inputs.admission == "waiting":
+        items.append(_not_admitted_item(inputs.sharing_enabled))
     if inputs.read_unavailable_reason:
         items.append(HealthItem(_OPERATOR, HealthClass.INFO, f"community graph could not be read: {inputs.read_unavailable_reason}",
                                 "nothing to do — the last good community tier is kept; verified rules still enforce"))
@@ -287,23 +320,23 @@ def node_installed(cfg: Any, node_reachable: bool) -> bool:
 
 def gather(cfg: Any, rs: Any, node_reachable: bool, read: Optional[Any], blocked_by_identifier: Mapping[str, int],
            now: float, *, pending_shares: int = 0, shares_given_up: int = 0, sharing_consent_problem: str = "",
-           verified_lookup_problem: str = "",
+           verified_lookup_problem: str = "", first_sync: str = "", admission: str = "",
            watch: Optional[manifest_watcher.ManifestWatchInputs] = None) -> HealthInputs:
-    """Build :class:`HealthInputs` from a config, a compiled ruleset, node
-    reachability, the last community read (or None), how many actions each
-    threat blocked here (``audit.blocked_counts_by_identifier()``) and the
-    share-retry counts (``community.share_retry_stats()``); *watch* is the
-    manifest watcher's facts (``manifest_watch.watch_inputs``), None = not watched."""
+    """Build :class:`HealthInputs` from a config, a compiled ruleset, node reachability, the last community
+    read (or None), how many actions each threat blocked here (``audit.blocked_counts_by_identifier()``), the
+    share-retry counts (``community.share_retry_stats()``) and this node's ``admission`` to the graph;
+    *watch* is the manifest watcher's facts (``manifest_watch.watch_inputs``), None = not watched."""
     view = getattr(read, "curator", None)
     revoked = {ident: int(blocked_by_identifier.get(ident, 0)) for ident in (view.revoked if view is not None else ())}
     kill_list = getattr(rs, "kill_list", None) or {}
+    today = datetime.fromtimestamp(now, UTC).date().isoformat()
     return HealthInputs(
         node_reachable=node_reachable,
         node_installed=node_installed(cfg, node_reachable),
         ruleset_age_s=(now - getattr(rs, "synced_at", 0)) if getattr(rs, "synced_at", 0) else None,
         sync_interval_s=float(getattr(cfg, "sync_interval", 0) or 0),
         rule_count=sum(int(v) for k, v in rs.counts().items() if k != "community"),
-        community_configured=bool(getattr(cfg, "community_graph_id", "")),
+        community_configured=bool(getattr(cfg, "context_graph_id", "")),
         community_paused=bool(getattr(rs, "community_paused", False)),
         read_unavailable_reason=("" if read is None or read.available else str(read.reason)),
         curator_trusted=bool(view is not None and view.manifest is not None),
@@ -314,9 +347,11 @@ def gather(cfg: Any, rs: Any, node_reachable: bool, read: Optional[Any], blocked
         pending_shares=int(pending_shares),
         sharing_consent_problem=sharing_consent_problem if getattr(cfg, "community_enabled", False) else "",
         verified_lookup_problem=verified_lookup_problem,
+        first_sync=first_sync,
+        admission=admission, sharing_enabled=bool(getattr(cfg, "community_enabled", False)),
         shares_given_up=int(shares_given_up),
         curators_last_day=(view.last_statement_day if view is not None else ""),
-        today=datetime.fromtimestamp(now, UTC).date().isoformat(),
+        today=today,
         heartbeat_missing_keys=_heartbeat_missing(view, now),
         manifest_conflict=bool(view is not None and view.manifest_conflict),
         manifest_conflict_ignored=bool(view is not None and view.manifest_conflict_ignored),
@@ -330,8 +365,7 @@ def gather(cfg: Any, rs: Any, node_reachable: bool, read: Optional[Any], blocked
         manifest_state=(view.manifest_state if view is not None else ""),
         manifest_state_day=(view.manifest_state_day if view is not None else ""),
         manifest_expires_day=(view.manifest_expires_day if view is not None else ""),
-        community_authority=community_alarms.gather(
-            getattr(view, "community", None), datetime.fromtimestamp(now, UTC).date().isoformat()),
+        community_authority=community_alarms.gather(getattr(view, "community", None), today),
         manifest_watch=watch or manifest_watcher.ManifestWatchInputs(),
     )
 
@@ -344,7 +378,7 @@ def _heartbeat_missing(view: Any, now: float) -> int:
     missing = 0
     for key in view.manifest.curator_keys:
         last = view.heartbeats.get(key, "")
-        if not last or _days_between(last, today) > HEARTBEAT_SILENCE_DAYS:
+        if not last or days_between(last, today) > HEARTBEAT_SILENCE_DAYS:
             missing += 1
     return missing
 

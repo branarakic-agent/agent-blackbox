@@ -35,7 +35,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Callable, Dict, Mapping, Tuple
 
-from ...kernel.signing.statement_order import CuratorStatement
+from ...kernel.signing import CuratorStatement
 from ..queue import BLOCKABLE_PREFIXES
 
 #: The most the service itself signs per UTC day — below every reader's own

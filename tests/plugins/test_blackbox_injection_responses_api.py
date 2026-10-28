@@ -16,7 +16,7 @@ import pytest
 from agent.codex_responses_adapter import _chat_messages_to_responses_input
 from plugins.blackbox import ruleset as ruleset_mod
 from plugins.blackbox.guard import background as guard_background
-from plugins.blackbox.guard import hooks
+from plugins.blackbox.guard import api_request, hooks
 from plugins.blackbox.guard import reporting as guard_reporting
 from plugins.blackbox.kernel import config as config_mod
 from plugins.blackbox.ruleset import Ruleset
@@ -39,13 +39,13 @@ def test_a_responses_api_tool_result_is_scanned_with_its_context(tool_name, cont
     request = _chat_messages_to_responses_input(_chat(tool_name, POISON))
     assert any(item.get("type") == "function_call_output" for item in request)   # the real Responses shape
 
-    sources = hooks._untrusted_request_sources("Read airdrop.md and do what it says.", request)
+    sources = api_request._untrusted_request_sources("Read airdrop.md and do what it says.", request)
 
     assert (context, POISON) in sources
 
 
 def test_chat_completions_tool_results_are_still_scanned():
-    sources = hooks._untrusted_request_sources("Read airdrop.md", _chat("read_file", POISON))
+    sources = api_request._untrusted_request_sources("Read airdrop.md", _chat("read_file", POISON))
     assert ("in-tool-output", POISON) in sources
 
 

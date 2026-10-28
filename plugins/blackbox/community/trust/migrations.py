@@ -33,9 +33,9 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Set, Tuple
 from ...kernel import signing, sparql_text, threat_ids
 from ...kernel.dkg_client import extract_binding
 from ...kernel.signing import graph_migration
-from ...kernel.signing.graph_migration import GraphMigration, MigrationVerdict
+from ...kernel.signing import GraphMigration, MigrationVerdict
 from ...kernel.signing import key_manifest
-from ...kernel.signing.trust_anchors import RootPins
+from ...kernel.signing import RootPins
 
 Order = tuple[int, int]
 

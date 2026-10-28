@@ -1,10 +1,11 @@
-"""The community pulse — "did the community graph change?" between full refreshes (R16, KI-202).
+"""The community pulse — "did the community change?" between full refreshes (R16, KI-202).
 
 Before R16 the community tier was re-read only when the WHOLE ruleset
 refreshed: a 15-minute floor on the dashboard, one hour by default. The
 near-real-time arrival the benches showed came from a watcher that existed
 only in the sandbox. Now one cheap probe — a single aggregate query over the
-community graph's shared memory, count plus newest subject — runs at most
+community's shared memory (the verified graph's, sub-graph
+``constants.COMMUNITY_SUB_GRAPH``), count plus newest subject — runs at most
 every ``cfg.community_poll_interval`` seconds (default 20, 0 = off) while the
 agent is active, and only when its answer differs from last time does the
 ruleset re-apply the community tier (see ``ruleset.pulse``). Reading stays
@@ -12,7 +13,9 @@ the reader's job; this module only says whether there is anything new.
 
 Pattern: one stateful object with one lock (the last fingerprint and the
 last probe time), module-level because the state is per process like the
-node it talks to.
+node it talks to. The probe slot itself is per MACHINE: :data:`PULSE` pairs
+the in-process timer with a :class:`~..kernel.bounded_files.ProbeStamp`, so
+ten protected profiles share one probe per interval instead of running ten.
 
 Usage::
 
@@ -27,18 +30,19 @@ import time
 from typing import Any, Callable, Optional
 
 from ..kernel import constants, sparql_text
+from ..kernel.bounded_files import ProbeStamp
 from ..kernel.dkg_client import DkgClient, extract_binding
 
 logger = logging.getLogger(__name__)
 
-#: One grouped aggregate over the community graph's shared memory: per statement
+#: One grouped aggregate over the community's shared memory: per statement
 #: kind (reports, retractions, disputes, digests, curator statements such as
 #: stage attestations — R3-attest) how many there are and the
 #: newest subject — so a retraction or a dispute changes the fingerprint too,
 #: not only a new report (bench finding 2026-10-02). Key manifests are counted
-#: too (Community Curation: the community authority's manifest lives in this
-#: graph, so a new one must be picked up within a pulse, KI-248). Kinds absent
-#: from the graph simply return no row.
+#: too (Community Curation: a community authority's manifest would live there,
+#: so a new one must be picked up within a pulse, KI-248). Kinds absent simply
+#: return no row.
 _STATEMENT_KINDS = ("ThreatReport", "Retraction", "FalsePositive", "SightingDigest", "CuratorStatement", "KeyManifest")
 _FINGERPRINT_SPARQL = (
     "PREFIX g: <http://umanitek.ai/ontology/guardian/> "
@@ -52,7 +56,7 @@ def fingerprint(client: DkgClient, cfg: Any) -> Optional[str]:
     absent kinds omitted; ``""`` for an empty graph), or None when the probe
     failed or timed out (fail-open: no change is ever inferred from a failed
     probe, and a timed-out probe looks like an empty graph — KI-262)."""
-    graph = str(getattr(cfg, "community_graph_id", "") or "")
+    graph = str(getattr(cfg, "context_graph_id", "") or "")
     if not graph:
         return None
     rows = sparql_text.query_rows(client, _FINGERPRINT_SPARQL, graph, constants.VIEW_SHARED_WORKING_MEMORY)
@@ -68,8 +72,9 @@ def fingerprint(client: DkgClient, cfg: Any) -> Optional[str]:
 class CommunityPulse:
     """Remembers when the graph was last probed and what it looked like."""
 
-    def __init__(self, clock: Callable[[], float] = time.time) -> None:
+    def __init__(self, clock: Callable[[], float] = time.time, stamp: Optional[ProbeStamp] = None) -> None:
         self._clock = clock
+        self._stamp = stamp
         self._lock = threading.Lock()
         self._last_probe = 0.0
         self._fingerprint: Optional[str] = None
@@ -83,6 +88,11 @@ class CommunityPulse:
         with self._lock:
             if now - self._last_probe < interval_s:
                 return False
+            if self._stamp is not None:
+                held_at = self._stamp.claim(interval_s, now)
+                if held_at is not None:                     # another process probed: wait out its interval
+                    self._last_probe = held_at
+                    return False
             self._last_probe = now
             return True
 
@@ -143,7 +153,9 @@ class CommunityPulse:
             self._last_probe = 0.0
             self._fingerprint = None
             self._baselined_now = False
+            if self._stamp is not None:
+                self._stamp.clear()
 
 
-#: The per-process pulse.
-PULSE = CommunityPulse()
+#: This process's pulse, paced with every other process on the machine through the stamp.
+PULSE = CommunityPulse(stamp=ProbeStamp(lambda: constants.blackbox_home() / "community-pulse.stamp"))

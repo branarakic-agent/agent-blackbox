@@ -18,14 +18,13 @@ Usage::
 from __future__ import annotations
 
 import json
-import os
-import secrets
 import threading
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Optional
 
 from .. import keys
 from . import policy
+from ...kernel.bounded_files import atomic_write
 
 _FILE = "service_budget.json"
 
@@ -61,6 +60,4 @@ class ServiceBudget:
             counts = self._counts(today)
             counts[kind] += 1
             self._path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self._path.with_name(f"{self._path.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}")
-            tmp.write_text(json.dumps({"day": today, **counts}), encoding="utf-8")
-            os.replace(tmp, self._path)
+            atomic_write(self._path, json.dumps({"day": today, **counts}))

@@ -80,7 +80,6 @@ def _run_unix_blackbox_config_writer(
     dkg_url: str,
     dkg_home: Path,
     dkg_bin: Path,
-    community: tuple[str, str] = (),
     repo_dir: str = "",
     env: dict | None = None,
 ) -> dict:
@@ -96,7 +95,6 @@ def _run_unix_blackbox_config_writer(
             dkg_url,
             str(dkg_home),
             str(dkg_bin),
-            *community,   # optional: (community graph id, owner peer id) — KI-216
             *([repo_dir] if repo_dir else []),   # optional: the checkout, for the consent check — KI-184
         ],
         check=True,
@@ -262,14 +260,14 @@ def test_llm_setup_is_optional_not_install_blocking() -> None:
     assert not re.search(r"<\s*/dev/tty", body), "installer must not prompt for optional LLM setup"
 
 
-def test_next_steps_only_blocks_on_threat_graph_sync() -> None:
+def test_next_steps_describes_the_kept_install_and_the_background_sync() -> None:
     body = _extract_function_body("next_steps")
 
     assert "BLACKBOX_THREAT_GRAPH_INCOMPLETE" in body
     assert "BLACKBOX_LLM_INCOMPLETE" not in body
     assert "The LLM reviewer is not configured yet." not in body
-    assert "A partial verified ruleset is active" in body
-    assert "BLACKBOX_PARTIAL_RULESET_READY" in body
+    assert "the first sync runs in the background" in body
+    assert "BLACKBOX_INSTALL_INCOMPLETE" not in body   # an incomplete install is rolled back, never summarised
 
 
 def test_unix_installer_is_directly_executable_and_detaches_background_processes(
@@ -324,77 +322,59 @@ def test_unix_installer_uses_a_real_session_boundary_for_dashboard() -> None:
     assert "close_fds=True" in body
 
 
-def test_unix_installer_starts_dashboard_before_one_controlled_sync() -> None:
-    run_body = _extract_function_body("run_detached")
-    health_body = _extract_function_body("detached_process_survived_startup")
+def test_unix_installer_hands_the_first_sync_to_the_dashboard() -> None:
+    """The install does not wait for the ~30-minute first sync (Amos, 2026-10-17): a slow
+    network must not fail — and, all or nothing, roll back — a working install. The
+    dashboard's own sync worker runs the same controlled sync."""
     sync_body = _extract_function_body("sync_ruleset")
 
-    assert 'BLACKBOX_DETACHED_PID=$!' in run_body
-    assert 'kill -0 "$pid"' in health_body
+    assert "start_dashboard" not in sync_body   # main starts it right after, once (a second launch replaced the first)
+    assert "blackbox sync --wait" not in sync_body.replace('echo "    blackbox sync --wait --require-rules"', "")
+    assert "BLACKBOX_INSTALL_INCOMPLETE=true" not in sync_body
     assert "run_detached" not in sync_body
-    assert "restart_blackbox_dkg_for_sync_mode" not in sync_body
-    assert 'BLACKBOX_INSTALL_INCOMPLETE=true' in sync_body
-    assert 'BLACKBOX_THREAT_GRAPH_INCOMPLETE=true' in sync_body
-    assert "one controlled verified graph catch-up" in sync_body
-    assert "start_dashboard" in sync_body
-    assert ': >"$BLACKBOX_SYNC_LOG"' in sync_body
-    assert 'tee -a "$BLACKBOX_SYNC_LOG"' in sync_body
-    assert sync_body.index("start_dashboard") < sync_body.index("blackbox sync --wait")
 
 
-@pytest.mark.skipif(shutil.which("bash") is None, reason="bash is unavailable")
-def test_unix_installer_opens_dashboard_before_fresh_sync_starts(
-    tmp_path: Path,
-) -> None:
-    sync_body = _extract_function_body("sync_ruleset")
-    hermes_home = tmp_path / "hermes"
-    log_dir = hermes_home / "logs"
-    log_dir.mkdir(parents=True)
-    sync_log = log_dir / "blackbox-sync-install.log"
-    # A previous successful install log is cleared before the new sync.
-    sync_log.write_text("999 verified threats ready\n", encoding="utf-8")
+def _run_sync_ruleset(tmp_path: Path, auto_dashboard: str) -> tuple[list[str], str]:
     events = tmp_path / "events"
+    events.write_text("", encoding="utf-8")
     fake_hermes = tmp_path / "fake-hermes"
-    fake_hermes.write_text(
-        "#!/usr/bin/env bash\n"
-        f"echo sync-started >> {shlex.quote(str(events))}\n"
-        "echo 'starting fresh sync'\n"
-        "sleep 0.2\n"
-        "echo '  10 verified threats ready'\n"
-        "sleep 1.4\n"
-        f"echo sync-finished >> {shlex.quote(str(events))}\n",
-        encoding="utf-8",
-    )
+    fake_hermes.write_text(f"#!/usr/bin/env bash\necho sync-started >> {shlex.quote(str(events))}\n", encoding="utf-8")
     fake_hermes.chmod(0o755)
     command = f"""
 set -euo pipefail
 heading() {{ :; }}
-step() {{ :; }}
+step() {{ echo "$1"; }}
 ok() {{ :; }}
-err() {{ :; }}
-restart_blackbox_dkg_for_sync_mode() {{ return 0; }}
 start_dashboard() {{ echo dashboard >> {shlex.quote(str(events))}; }}
 sync_ruleset() {{
-{sync_body}
+{_extract_function_body("sync_ruleset")}
 }}
 DKG_READY=true
-HERMES_HOME={shlex.quote(str(hermes_home))}
 HERMES_BIN={shlex.quote(str(fake_hermes))}
-BLACKBOX_DKG_CATCHUP_TIMEOUT=30
-BLACKBOX_DKG_STEADY_DURABLE_SYNC_ENABLED=0
-BLACKBOX_AUTO_DASHBOARD=1
+BLACKBOX_AUTO_DASHBOARD={auto_dashboard}
 BLACKBOX_INSTALL_INCOMPLETE=false
-BLACKBOX_THREAT_GRAPH_INCOMPLETE=false
-BLACKBOX_SYNC_LOG=''
 sync_ruleset
+echo "incomplete=$BLACKBOX_INSTALL_INCOMPLETE"
 """
+    completed = subprocess.run(["bash", "-c", command], check=True, timeout=10, capture_output=True, text=True)
+    return events.read_text(encoding="utf-8").splitlines(), completed.stdout
 
-    subprocess.run(["bash", "-c", command], check=True, timeout=10)
-    assert events.read_text(encoding="utf-8").splitlines() == [
-        "dashboard",
-        "sync-started",
-        "sync-finished",
-    ]
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash is unavailable")
+def test_unix_installer_does_not_wait_for_the_sync(tmp_path: Path) -> None:
+    events, stdout = _run_sync_ruleset(tmp_path, "1")
+
+    assert events == []   # no sync run here; the dashboard main starts next runs it
+    assert "incomplete=false" in stdout
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash is unavailable")
+def test_unix_installer_without_dashboard_names_the_sync_command(tmp_path: Path) -> None:
+    events, stdout = _run_sync_ruleset(tmp_path, "0")
+
+    assert events == []
+    assert "blackbox sync --wait --require-rules" in stdout
+    assert "incomplete=false" in stdout
 
 
 def test_installers_enable_blackbox_noninteractively() -> None:
@@ -453,10 +433,8 @@ def test_unix_installer_uses_isolated_blackbox_dkg_node() -> None:
     assert 'BLACKBOX_DKG_HOME="$BLACKBOX_INSTALL_ROOT/.dkg"' in text
     assert 'BLACKBOX_DKG_CLI_DIR="$BLACKBOX_INSTALL_ROOT/dkg"' in text
     assert 'BLACKBOX_DKG_BIN="$BLACKBOX_DKG_CLI_DIR/node_modules/.bin/dkg"' in text
-    assert (
-        'BLACKBOX_DKG_PACKAGE="${BLACKBOX_DKG_PACKAGE:-'
-        '@origintrail-official/dkg@latest}"'
-    ) in text
+    assert 'BLACKBOX_DKG_DEFAULT_PACKAGE="@origintrail-official/dkg@10.0.26"' in text
+    assert 'BLACKBOX_DKG_PACKAGE="${BLACKBOX_DKG_PACKAGE:-$BLACKBOX_DKG_DEFAULT_PACKAGE}"' in text
     assert 'BLACKBOX_DKG_DAEMON_URL="http://127.0.0.1:$BLACKBOX_DKG_PORT"' in text
     assert 'npm install --prefix "$BLACKBOX_DKG_CLI_DIR"' in text
     assert '--prefer-online' in text
@@ -469,7 +447,7 @@ def test_unix_installer_uses_isolated_blackbox_dkg_node() -> None:
     assert '"options": {"url": store_url, "managedByDkg": store_managed, "timeout": 900000}' in text
     assert "blackbox-blazegraph.mjs" in text
     assert 'blackbox_dkg subscribe "$blackbox_cg" --save' not in text
-    assert '"$HERMES_BIN" blackbox sync --wait' in text
+    assert '"$HERMES_BIN" blackbox sync --wait' not in text   # the dashboard runs the first sync
     assert "uses_unpaired_shared_dkg_home" in text
     assert "uses_legacy_blackbox_dkg_home" in text
     assert "migrate_legacy_blackbox_dkg_home" in text
@@ -687,9 +665,9 @@ def test_windows_installer_uses_isolated_blackbox_dkg_node() -> None:
     assert '$DkgHome     = Join-Path $DefaultRepoDir ".dkg"' in text
     assert '$DkgCliDir   = Join-Path $DefaultRepoDir "dkg"' in text
     assert r'$DkgBin      = Join-Path $DkgCliDir "node_modules\.bin\dkg.cmd"' in text
-    assert "@origintrail-official/dkg@latest" in text
+    assert "@origintrail-official/dkg@10.0.26" in text
     assert '$DkgDaemonUrl = "http://127.0.0.1:$DkgPort"' in text
-    assert "npm install --prefix $DkgCliDir --prefer-online $DkgPackage" in text
+    assert "npm install --prefix $DkgCliDir --prefer-online $installSpec" in text
     assert "BLACKBOX_DKG_REPO_URL" not in text
     assert "corepack pnpm" not in text
     assert "Ensure-BlackboxDkgConfig" in text
@@ -757,8 +735,8 @@ def test_dkg_config_writer_leaves_subscriptions_to_the_dkg_api(tmp_path: Path) -
     assert migrated["syncOnConnectEnabled"] is True
     assert migrated["syncReconcilerEnabled"] is True
     assert migrated["durableSyncEnabled"] is True
-    assert migrated["syncGlobalMaxInflight"] == 1
-    assert migrated["syncGlobalQueueLimit"] == 0
+    assert migrated["syncGlobalMaxInflight"] == 10   # the node default (KI-449)
+    assert migrated["syncGlobalQueueLimit"] == 20
     assert "restrictAutoSubscribeContextGraphs" not in migrated
     assert migrated["store"] == {
         "backend": "blazegraph",
@@ -1235,8 +1213,8 @@ def test_installers_offer_both_store_backends_and_actionable_docker_setup() -> N
     assert "brew install --cask docker && open -a Docker" in unix
     assert "Docker.DockerDesktop" in windows
     assert "docker info" in unix and "docker info" in windows
-    assert "Continue with Oxigraph instead? [y/N]" in unix
-    assert "Continue with Oxigraph instead? [y/N]" in windows
+    assert "Continue with Oxigraph? [Y/n]" in unix   # yes by default (Amos, 2026-10-17)
+    assert "Continue with Oxigraph instead? [y/N]" in windows   # Windows parity: next installer change
     assert "confirm_oxigraph_fallback" in unix
     assert "Confirm-OxigraphFallback" in windows
     assert "Installation stopped before changing the DKG store" in unix
@@ -1261,8 +1239,9 @@ confirm_oxigraph_fallback "Docker unavailable"
         check=False,
     )
 
-    assert completed.returncode == 1
-    assert "No interactive terminal is available" in completed.stdout
+    # No terminal (an agent, a script): Oxigraph is chosen, never a dead end (Amos, 2026-10-17).
+    assert completed.returncode == 0
+    assert "No terminal to ask" in completed.stdout
     assert "Device not configured" not in completed.stderr
 
 
@@ -1348,7 +1327,8 @@ def test_blazegraph_helper_uses_built_dkg_provisioner(tmp_path: Path) -> None:
     }
 
 
-def test_blazegraph_helper_sizes_heap_and_preserves_undersized_store(tmp_path: Path) -> None:
+@pytest.mark.parametrize("old_heap", ["-Xmx1g", "-Xms512m -Xmx4g"])
+def test_blazegraph_helper_sizes_heap_and_preserves_undersized_store(tmp_path: Path, old_heap: str) -> None:
     node = shutil.which("node")
     if not node:
         pytest.skip("Node.js is not installed")
@@ -1373,7 +1353,7 @@ def test_blazegraph_helper_sizes_heap_and_preserves_undersized_store(tmp_path: P
         "#!/bin/sh\n"
         f"printf '%s\\n' \"$*\" >> {shlex.quote(str(docker_log))}\n"
         "case \"$1\" in\n"
-        "  inspect) printf '%s\\n' '[{\"Config\":{\"Env\":[\"JAVA_OPTS=-Xmx1g\"]}}]' ;;\n"
+        f"  inspect) printf '%s\\n' '[{{\"Config\":{{\"Env\":[\"JAVA_OPTS={old_heap}\",\"TOMCAT_JAVA_OPTS=\"]}}}}]' ;;\n"
         "  run) printf '%s\\n' \"$*\" ;;\n"
         "esac\n",
         encoding="utf-8",
@@ -1393,7 +1373,7 @@ def test_blazegraph_helper_sizes_heap_and_preserves_undersized_store(tmp_path: P
     assert calls[1] == "stop dkg-blazegraph-test"
     assert calls[2].startswith("rename dkg-blazegraph-test dkg-blazegraph-test-pre-4g-")
     assert calls[3] == "info --format {{.NCPU}}"   # this fake Docker gives no count: the old 4 stands
-    assert calls[4] == "run --cpus 4 -e JAVA_OPTS=-Xms512m -Xmx4g -d blazegraph"
+    assert calls[4] == "run --cpus 4 -e TOMCAT_JAVA_OPTS=-Xms512m -Xmx4g -d blazegraph"
     assert json.loads(completed.stdout)["url"] == calls[4]
 
 
@@ -1433,7 +1413,7 @@ def test_blazegraph_helper_never_asks_docker_for_more_cpus_than_it_has(tmp_path:
         env={**os.environ, "PATH": str(fake_bin) + os.pathsep + os.environ.get("PATH", "")},
     )
 
-    assert json.loads(completed.stdout)["url"] == "run --cpus 2 -e JAVA_OPTS=-Xms512m -Xmx4g -d blazegraph"
+    assert json.loads(completed.stdout)["url"] == "run --cpus 2 -e TOMCAT_JAVA_OPTS=-Xms512m -Xmx4g -d blazegraph"
 
 
 def test_blazegraph_helper_uses_dkg_store_health_check(tmp_path: Path) -> None:
@@ -1526,10 +1506,10 @@ def test_installers_use_native_dkg_membership_without_sync_overrides() -> None:
         assert "DKG_EXACT_BATCH_STREAM_ENABLED" in text
         assert "DKG_VM_RECOVERY_PREFETCH_ENABLED" in text
         assert 'data["durableSyncEnabled"] = True' in text
-        assert 'data["syncGlobalMaxInflight"] = 1' in text
-        assert 'data["syncGlobalQueueLimit"] = 0' in text
+        assert 'data["syncGlobalMaxInflight"] = sync_inflight' in text   # the node default (KI-449)
+        assert 'data["syncGlobalQueueLimit"] = sync_queue' in text
         assert 'data.pop("restrictAutoSubscribeContextGraphs", None)' in text
-        assert 'data["syncSharedMemoryOnConnect"] = False' in text
+        assert 'data["syncSharedMemoryOnConnect"] = True' in text
         assert 'data["syncContextGraphPriorities"] = priorities' in text
         assert '"backend": "blazegraph"' in text
         assert '"options": {"url": store_url, "managedByDkg": store_managed, "timeout": 900000}' in text
@@ -1546,22 +1526,21 @@ def test_installers_use_native_dkg_membership_without_sync_overrides() -> None:
         assert "Blazegraph SPARQL endpoint is healthy" in text
         assert "Blazegraph is unavailable or returned an error" in text
 
-    assert 'BLACKBOX_DKG_SYNC_GLOBAL_MAX_INFLIGHT="1"' in unix
-    assert 'BLACKBOX_DKG_SYNC_GLOBAL_QUEUE_LIMIT="1"' in unix
+    assert 'BLACKBOX_DKG_SYNC_GLOBAL_MAX_INFLIGHT="10"' in unix
+    assert 'BLACKBOX_DKG_SYNC_GLOBAL_QUEUE_LIMIT="20"' in unix
     assert 'BLACKBOX_DKG_DURABLE_SYNC_ENABLED="${BLACKBOX_DKG_DURABLE_SYNC_ENABLED:-1}"' in unix
     assert 'BLACKBOX_DKG_CATCHUP_MAX_CONCURRENT_PEERS="1"' in unix
-    assert "PYTHONUNBUFFERED=1" in unix
     assert 'BLACKBOX_DKG_STORE_QUEUE_WAIT_TIMEOUT_MS="300000"' in unix
-    assert '$DkgSyncGlobalMaxInflight = "1"' in windows
-    assert '$DkgSyncGlobalQueueLimit = "1"' in windows
+    assert '$DkgSyncGlobalMaxInflight = "10"' in windows
+    assert '$DkgSyncGlobalQueueLimit = "20"' in windows
     assert 'else { "1" }' in windows
     assert "restart_blackbox_dkg_for_sync_mode" not in unix
     assert "Restart-BlackboxDkgForSyncMode" not in windows
     assert unix_main.index("sync_ruleset\n") < unix_main.index("start_dashboard\n")
     assert '$DkgCatchupMaxConcurrentPeers = "1"' in windows
     assert '$DkgStoreQueueWaitTimeoutMs = "300000"' in windows
-    assert "one large sync at a time" in unix
-    assert "one large sync at a time" in windows
+    assert "syncs at once" in unix
+    assert "syncs at once" in windows
 
 
 @pytest.mark.parametrize("store_backend", ["blazegraph", "oxigraph-server"])
@@ -1843,43 +1822,6 @@ def test_windows_dkg_npm_failure_is_fatal_to_dkg_setup() -> None:
     assert install_body.index(failure_guard) < install_body.index(
         "New-Item -ItemType Directory -Force -Path $DkgHome"
     )
-
-
-def test_unix_installer_writes_the_community_graph_and_its_owner_peer_as_a_pair(
-    tmp_path: Path,
-) -> None:
-    """KI-216: a fresh node cannot find an unregistered public graph until it is
-    connected to the graph owner, so the installer writes the owner's peer id
-    next to the graph id (both from env), and an explicit value always wins."""
-    config_path = tmp_path / "config.yaml"
-    config_path.write_text(
-        "plugins:\n  entries:\n    blackbox:\n      community_graph_peer_id: stale-peer\n",
-        encoding="utf-8",
-    )
-    configured = _run_unix_blackbox_config_writer(
-        config_path,
-        dkg_url="http://127.0.0.1:9320",
-        dkg_home=tmp_path / ".dkg",
-        dkg_bin=tmp_path / "dkg" / "node_modules" / ".bin" / "dkg",
-        community=("0xowner/community-graph", "12D3KooWowner"),
-    )
-    blackbox = configured["plugins"]["entries"]["blackbox"]
-    assert blackbox["community_graph_id"] == "0xowner/community-graph"
-    assert blackbox["community_graph_peer_id"] == "12D3KooWowner"
-
-
-def test_unix_installer_leaves_community_keys_alone_when_no_pair_is_given(
-    tmp_path: Path,
-) -> None:
-    config_path = tmp_path / "config.yaml"
-    configured = _run_unix_blackbox_config_writer(
-        config_path,
-        dkg_url="http://127.0.0.1:9320",
-        dkg_home=tmp_path / ".dkg",
-        dkg_bin=tmp_path / "dkg" / "node_modules" / ".bin" / "dkg",
-    )
-    blackbox = configured["plugins"]["entries"]["blackbox"]
-    assert "community_graph_id" not in blackbox and "community_graph_peer_id" not in blackbox
 
 
 def test_unix_installer_moves_the_old_default_cap_to_the_new_one(tmp_path: Path) -> None:

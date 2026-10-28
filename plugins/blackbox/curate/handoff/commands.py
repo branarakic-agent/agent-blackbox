@@ -20,11 +20,12 @@ from ...kernel import display_safety
 from ...kernel.config import load_blackbox_config
 from ...kernel.dkg_client import DkgClient
 from ...kernel.signing import trust_anchors
-from ...kernel.signing.statement_order import CuratorStatement
+from ...kernel.signing import CuratorStatement
 from ..context import CurateContext
 from ..dossier import CommunityConfirmation
 from ..publishing import VerbError
 from .live_pool import bundle_text, read_live_pool
+from ...kernel.bounded_files import atomic_write
 
 _term = display_safety.term_safe
 
@@ -56,11 +57,9 @@ def export(ctx: CurateContext, out: str) -> int:
     text = bundle_text(ctx, pool)
     path = Path(out).expanduser()
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}")
-    tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, path)
+    atomic_write(path, text)
     print(f"exported {len(pool.entries)} confirmed threat(s) to {path} "
-          f"(network {_term(ctx.environment, 60)}, graph {_term(ctx.cfg.community_graph_id, 100)})")
+          f"(network {_term(ctx.environment, 60)}, graph {_term(ctx.verified_graph, 100)})")
     print("check it anywhere with: blackbox curate verify-bundle <file> --root <community root key> --network <network id>")
     return 0
 
@@ -71,7 +70,7 @@ def _network(given: str) -> str:
         return given
     try:
         cfg = load_blackbox_config()
-        return community.network_environment(DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home).status())
+        return community.network_environment(DkgClient(url=cfg.dkg_url, dkg_home=cfg.dkg_home, config=cfg).status())
     except Exception:   # offline is the normal case for a verifier; the caller then asks for --network
         return ""
 
@@ -80,7 +79,7 @@ def check(path: str, *, root: str, network: str, graph: str, today: Optional[str
     """Verify the bundle file at *path*. *root* — the community root key (hex;
     default: the one pinned for *graph*); *network* — the network id (default:
     this node's); *graph* — the community graph (default: this node's)."""
-    graph = graph or load_blackbox_config().community_graph_id
+    graph = graph or load_blackbox_config().context_graph_id
     roots = {root.lower()} if root else trust_anchors.community_roots(graph)
     network = _network(network)
     if not network:
@@ -113,7 +112,7 @@ def confirmation_for(ctx: CurateContext, identifier: str, bundle: str = "") -> O
     *identifier*: from a verified bundle file when one is given, else from the
     statements this node verified. None when there is none."""
     if bundle:
-        report = check(bundle, root="", network=ctx.environment, graph=ctx.cfg.community_graph_id)
+        report = check(bundle, root="", network=ctx.environment, graph=ctx.verified_graph)
         if report.error:
             raise VerbError(f"the bundle was refused: {report.error}")
         for entry in report.passed:

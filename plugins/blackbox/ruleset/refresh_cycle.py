@@ -30,6 +30,8 @@ from .. import community
 from . import locks
 from .memory_cache import RulesetCache
 from . import pulse_beat
+from .direct.view import GraphView
+
 from . import live
 
 logger = logging.getLogger(__name__)
@@ -106,6 +108,10 @@ def refresh(
     generation started before that barrier.
     """
     config = config or load_blackbox_config()
+    if getattr(config, 'detection_backend', 'legacy-cache') == "dkg":
+        result = GraphView(config)
+        result.counts()  # live capability/readiness check; no rule extraction
+        return result
     context_graph_id = config.context_graph_id
     initial_stamp = _cache_file_stamp()
     with locks._ruleset_refresh_lock(blocking=wait_for_lock) as acquired:
@@ -135,8 +141,10 @@ def _refresh_unlocked(
 ) -> compiler.Ruleset:
     """Refresh while the caller holds :func:`_ruleset_refresh_lock`."""
     config = config or load_blackbox_config()
+    if getattr(config, 'detection_backend', 'legacy-cache') == "dkg":
+        return refresh(config)  # internal/background callers also cannot export
     context_graph_id = config.context_graph_id
-    client = client or DkgClient(url=config.dkg_url, dkg_home=config.dkg_home)
+    client = client or DkgClient(url=config.dkg_url, dkg_home=config.dkg_home, config=config)
     listing = _partition_listing(client, context_graph_id)   # ONE _meta read, shared with the scope
     fetched = {"public": fetching.fetch_tier(client, context_graph_id, constants.VIEW_VERIFIABLE_MEMORY, listing=listing)}
 
@@ -146,16 +154,7 @@ def _refresh_unlocked(
     empty_success = all(rows == [] for rows in fetched.values())
     failed_tiers = [tier for tier, rows in fetched.items() if rows is None]
 
-    if require_complete:
-        if failed_tiers:
-            raise errors.RulesetRefreshIncomplete(
-                "post-barrier VM query failed for "
-                + ", ".join(sorted(failed_tiers))
-            )
-        if empty_success:
-            raise errors.RulesetRefreshIncomplete(
-                "post-barrier VM query returned an empty snapshot"
-            )
+    errors.require_complete(require_complete, failed_tiers, empty_success)
 
     if empty_success:
         # Snapshot replacement is atomic from the user's perspective. A
@@ -245,7 +244,7 @@ def _apply_overlays(rs: compiler.Ruleset, client: Optional[DkgClient], config: B
     """
     if client is None:
         return
-    curator_tier.apply_curator_tier(rs, client, config)
+    curator_tier.apply_curator_tier(rs, client, config, rs if reused else _latest_cached_ruleset(config.context_graph_id))
     # DKG-lookup B2: the live verified scope is rebuilt on every path, so a last-good
     # generation kept through an empty read still learns the assets confirmed since.
     rs.verified_scope = live.scope_for_generation(
@@ -253,7 +252,7 @@ def _apply_overlays(rs: compiler.Ruleset, client: Optional[DkgClient], config: B
         suppressed=None if reused else rs.suppressed_subjects, revoked=rs.curator_revoked, listing=listing,
         fallback=config.verified_lookup_fallback, legacy_assets_hash=rs.curator_legacy_assets_hash)
     live.maintain_fallback_index(rs.verified_scope, client, config.context_graph_id)   # B9: no-op unless opted in
-    if not config.community_graph_id:
+    if not config.context_graph_id:
         return
     # KI-208: record what the graph looks like BEFORE this read, so anything that
     # lands during or after it shows up as a change to the next pulse of any process.
@@ -345,6 +344,8 @@ def get(config: Optional[BlackboxConfig] = None) -> compiler.Ruleset:
     """
     global _refreshing
     config = config or load_blackbox_config()
+    if getattr(config, 'detection_backend', 'legacy-cache') == "dkg":
+        return GraphView(config)
     cached = _latest_cached_ruleset(config.context_graph_id)
     if cached is None:
         disk = disk_cache._read_cache()
@@ -380,11 +381,11 @@ def get(config: Optional[BlackboxConfig] = None) -> compiler.Ruleset:
 def peek(config: Optional[BlackboxConfig] = None) -> compiler.Ruleset:
     """Return the last cached ruleset without starting a node refresh.
 
-    The dashboard has one dedicated refresh worker. Request handlers and the
-    dashboard's catch-up watcher use this read-only path so a large initial DKG
-    transfer cannot accidentally fan out additional Blazegraph queries.
+    Request handlers read without starting extra background transfers.
     """
     config = config or load_blackbox_config()
+    if getattr(config, 'detection_backend', 'legacy-cache') == "dkg":
+        return GraphView(config)
     cached = _latest_cached_ruleset(config.context_graph_id)
     if cached is None:
         disk = disk_cache._read_cache()

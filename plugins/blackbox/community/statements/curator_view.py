@@ -29,17 +29,18 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta, timezone, UTC
-from typing import Any, AbstractSet, Dict, FrozenSet, Iterable, List, Mapping, Optional, Tuple
+from datetime import date, timedelta
+from typing import Any, AbstractSet, Iterable, Mapping, Optional
 
 from ...kernel.signing import key_manifest, statement_order
-from ...kernel.signing.authority import Authority, allowed_kinds
-from ...kernel.signing.statement_order import CuratorStatement
+from ...kernel.signing import Authority, allowed_kinds
+from ...kernel.signing import CuratorStatement
 from . import curator_statements
 from .curator_statements import CuratorRecord
 
 logger = logging.getLogger(__name__)
 from .disputes import VerifiedDispute
+from ...kernel.health import today_utc as _kernel_today
 
 
 #: Statement types the VERIFIED authority publishes in the verified graph (plan §06);
@@ -362,13 +363,6 @@ def _latest(records: Iterable[CuratorRecord]) -> Optional[CuratorRecord]:
     return max(records, key=lambda r: r.sequence, default=None)
 
 
-def _today() -> str:
-    return datetime.now(UTC).date().isoformat()
-
-
-def today_utc() -> str:
-    """The reader's UTC day (the clock every curator-statement span uses)."""
-    return _today()
 
 
 def counted_dispute_weight(disputes: Iterable[VerifiedDispute], view: CuratorView) -> dict[str, int]:
@@ -379,3 +373,13 @@ def counted_dispute_weight(disputes: Iterable[VerifiedDispute], view: CuratorVie
         if view.is_counted(dispute.author):
             disputers.setdefault(dispute.identifier, set()).add(dispute.author)
     return {identifier: len(authors) for identifier, authors in disputers.items()}
+
+
+def _today() -> str:
+    """The clock seam (tests set it): the kernel's UTC day."""
+    return _kernel_today()
+
+
+def today_utc() -> str:
+    """The reader's UTC day (the clock every curator-statement span uses)."""
+    return _today()

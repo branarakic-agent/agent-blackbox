@@ -31,7 +31,8 @@ from ...kernel.config import load_blackbox_config
 from ..contract import (Capability, FindingKind, SettingField, SettingOption, Shield, ShieldEvent, ShieldMode,
                         ShieldStatus)
 from ..packs import load_packs
-from . import detectors, events, mode, status
+from ..self_test import SELF_TESTS
+from . import detectors, events, mode, self_tests, status
 from .detectors import own_keys
 
 HERE = Path(__file__).resolve().parent
@@ -163,6 +164,9 @@ TRADER = Shield(
 # The mode chooses among the packs, read once here at import (never on the hot path).
 # The registry reads them again for its own view (logos, health): two import-time reads.
 mode.use_packs(load_packs(TRADER))
+
+# The Playground lists Trader's self-tests through the registry, never this package.
+SELF_TESTS.register(TRADER.id, self_tests.build)
 
 # The kernel's own-key redaction needs the listed addresses but may not import a shield:
 # the shield hands its reader in (dependency injection, like the settings validators).

@@ -78,17 +78,22 @@ $DkgAcceptStoreReset = $false
 $DkgHome     = Join-Path $DefaultRepoDir ".dkg"
 $DkgCliDir   = Join-Path $DefaultRepoDir "dkg"
 $DkgBin      = Join-Path $DkgCliDir "node_modules\.bin\dkg.cmd"
-$DkgPackage  = if ($env:BLACKBOX_DKG_PACKAGE) { $env:BLACKBOX_DKG_PACKAGE } else { "@origintrail-official/dkg@latest" }
-# The npm integrity hash $DkgPackage must have ("sha512-..."); empty = not checked (see the .sh).
-$DkgIntegrity = if ($env:BLACKBOX_DKG_INTEGRITY) { $env:BLACKBOX_DKG_INTEGRITY } else { "" }
+# The DKG release this Blackbox installs and the sha512 the downloaded tarball must have; another
+# package needs its own BLACKBOX_DKG_INTEGRITY, or "unpinned" to skip the check knowingly (see the .sh).
+$DkgDefaultPackage = "@origintrail-official/dkg@10.0.26"
+$DkgDefaultIntegrity = "sha512-QlCW/5UvL2UHaR2QGAemQzvu+ZtBKfefwuitoX2hGr/XZAgkFXsln1NHitzftQM99qTrlKBq8CFfDSfDFAbMHg=="
+$DkgPackage  = if ($env:BLACKBOX_DKG_PACKAGE) { $env:BLACKBOX_DKG_PACKAGE } else { $DkgDefaultPackage }
+$DkgIntegrity = if ($env:BLACKBOX_DKG_INTEGRITY) { $env:BLACKBOX_DKG_INTEGRITY } elseif ($DkgPackage -eq $DkgDefaultPackage) { $DkgDefaultIntegrity } else { "" }
 # Packages whose install scripts the DKG node needs; npm 12 runs only those listed under
 # "allowScripts" in the project's package.json (see the .sh for the whole story).
 $DkgAllowScripts = @("@origintrail-official/dkg", "better-sqlite3", "@openuidev/lang-core")
 $DkgDaemonUrl = "http://127.0.0.1:$DkgPort"
 $DkgStoreQueueLimit = if ($env:BLACKBOX_DKG_STORE_QUEUE_LIMIT) { [int]$env:BLACKBOX_DKG_STORE_QUEUE_LIMIT } else { 512 }
 $DkgListContextGraphsProjection = if ($env:BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION) { $env:BLACKBOX_DKG_LIST_CONTEXT_GRAPHS_PROJECTION } else { "1" }
-$DkgSyncGlobalMaxInflight = "1"
-$DkgSyncGlobalQueueLimit = "1"
+# The node's own sync defaults (DKG 10.0.25: 10 sync jobs, queue 20), so verified data and community
+# data sync side by side (bench 2026-10-22; was 1/1 from the original installer).
+$DkgSyncGlobalMaxInflight = "10"
+$DkgSyncGlobalQueueLimit = "20"
 $script:DkgDurableSyncEnabled = if ($env:BLACKBOX_DKG_DURABLE_SYNC_ENABLED) { $env:BLACKBOX_DKG_DURABLE_SYNC_ENABLED } else { "1" }
 $DkgCatchupMaxConcurrentPeers = "1"
 $DkgStoreQueueWaitTimeoutMs = "300000"
@@ -265,6 +270,15 @@ function Initialize-BlackboxDkgProcessEnvironment {
         return $false
     }
     $script:DkgNodeOptions = "$($nodeOptionsOutput | Select-Object -Last 1)".Trim()
+    # Sync transfers at once, by the machine's memory (see the .sh): 10 from 8 GB, 4 below.
+    $slotsOutput = @(& $script:VenvPython $helper sync-slots 2>&1)
+    $slots = "$($slotsOutput | Select-Object -Last 1)".Trim()
+    if ($LASTEXITCODE -eq 0 -and $slots -match '^([0-9]+) ([0-9]+)$') {
+        $script:DkgSyncGlobalMaxInflight = $Matches[1]
+        $script:DkgSyncGlobalQueueLimit = $Matches[2]
+    } else {
+        Write-Warn2 "Could not size the node's sync slots for this machine; using the node's defaults."
+    }
     # Record them so Blackbox's own node restarts relaunch with the same limits
     # (sync/process_limits.py). Not fatal: without the record they are recomputed.
     $limitsOutput = @(& $script:VenvPython $helper write-limits $DkgHome $script:DkgNodeOptions "$DkgStoreQueueLimit" 2>&1)
@@ -272,7 +286,7 @@ function Initialize-BlackboxDkgProcessEnvironment {
         if ($limitsOutput) { $limitsOutput | ForEach-Object { Write-Warn2 "$_" } }
         Write-Warn2 "Could not record the DKG node limits; Blackbox restarts will recompute them."
     }
-    Write-Ok "DKG safety limits: one large sync at a time; V8 heap ${heapMb}MB"
+    Write-Ok "DKG safety limits: V8 heap ${heapMb}MB; $DkgSyncGlobalMaxInflight syncs at once"
     return $true
 }
 
@@ -377,6 +391,8 @@ function Invoke-BlackboxDkg {
         $env:DKG_SYNC_GLOBAL_QUEUE_LIMIT = "$DkgSyncGlobalQueueLimit"
         $env:DKG_CATCHUP_MAX_CONCURRENT_PEERS = "$DkgCatchupMaxConcurrentPeers"
         $env:DKG_STORE_QUEUE_WAIT_TIMEOUT_MS = "$DkgStoreQueueWaitTimeoutMs"
+        # No effect: the node reads neither of the next two (DKG 10.0.25 has its
+        # sync limits built in).
         $env:DKG_SYNC_TOTAL_TIMEOUT_MS = "1800000"
         $env:DKG_SWM_RECOVERY_TIMEOUT_MS = "3600000"
         $env:DKG_EXACT_BATCH_STREAM_ENABLED = "$DkgExactBatchStreamEnabled"
@@ -851,6 +867,9 @@ context_graph_id = sys.argv[6]
 # Absent (an older caller): no graph is treated as the default, so the
 # steady profile stays exactly as before.
 default_context_graph_id = sys.argv[7] if len(sys.argv) > 7 else ""
+# Sync slots for this machine (sync/process_limits.sync_slots): 10/20 from 8 GB, 4/8 below.
+sync_inflight = int(sys.argv[9]) if len(sys.argv) > 9 and sys.argv[9] else 10
+sync_queue = int(sys.argv[10]) if len(sys.argv) > 10 and sys.argv[10] else 20
 home.mkdir(parents=True, exist_ok=True)
 cfg_path = home / "config.json"
 original = None
@@ -866,6 +885,7 @@ data.setdefault("name", "agent-blackbox")
 data["apiPort"] = api_port
 data.setdefault("listenPort", 0)
 data["nodeRole"] = "edge"
+data.setdefault("DKG_Core_chain_cache", True)
 data["networkConfig"] = "mainnet-base"
 # Relay reachability (see the .sh installer for the full rationale): DKG builds
 # its relay set from `relayPeers`; empty -> network-isolation denies every
@@ -895,10 +915,12 @@ if native_profile:
     data["vmReconcilerEnabled"] = True
     data["vmRecoveryPrefetchEnabled"] = True
 data.pop("syncAgentsMeta", None)
-data["syncGlobalMaxInflight"] = 1
-data["syncGlobalQueueLimit"] = 0
+data["syncGlobalMaxInflight"] = sync_inflight   # verified and community data side by side, sized for the machine
+data["syncGlobalQueueLimit"] = sync_queue
 data.pop("restrictAutoSubscribeContextGraphs", None)
-data["syncSharedMemoryOnConnect"] = False
+# One graph (2026-10-16): community reports live in the shared memory of the
+# verified graph; ones written while this node was offline come back on connect.
+data["syncSharedMemoryOnConnect"] = True
 priorities = data.get("syncContextGraphPriorities")
 if not isinstance(priorities, dict):
     priorities = {}
@@ -953,7 +975,7 @@ print("switched" if switched else ("changed" if changed else "unchanged"))
     $writerFile = Join-Path $env:TEMP "blackbox_dkg_config.py"
     Set-Content -Path $writerFile -Value $writer -Encoding UTF8
     try {
-        $configState = & $VenvPython $writerFile $DkgHome $DkgPort $script:DkgSelectedStoreBackend $DkgStoreUrl $DkgStoreManagedByDkg $ContextGraphId $DefaultContextGraphId
+        $configState = & $VenvPython $writerFile $DkgHome $DkgPort $script:DkgSelectedStoreBackend $DkgStoreUrl $DkgStoreManagedByDkg $ContextGraphId $DefaultContextGraphId "" "$DkgSyncGlobalMaxInflight" "$DkgSyncGlobalQueueLimit"
         if ($LASTEXITCODE -ne 0) { throw "dkg config exit $LASTEXITCODE" }
         $configResult = $configState | Select-Object -Last 1
         if ($configResult -eq "switched") {
@@ -1148,14 +1170,33 @@ function Install-BlackboxDkgPackage {
         return $false
     }
 
-    # A pinned checksum is compared with what the registry publishes BEFORE anything is installed.
-    if ($DkgIntegrity) {
-        $published = (& npm view $DkgPackage dist.integrity 2>$null | Out-String).Trim()
-        if ($published -ne $DkgIntegrity) {
-            Write-Warn2 "The registry's checksum for $DkgPackage ($published) is not the one this Blackbox release pins; it was not installed."
+    # The package is downloaded first and the tarball's own sha512 compared with the pin; only a
+    # tarball that matches is handed to npm install. No pin = not installed (see the .sh).
+    $tarball = ""
+    if ($DkgIntegrity -eq "unpinned") {
+        Write-Warn2 "BLACKBOX_DKG_INTEGRITY=unpinned: $DkgPackage is installed without a checksum check."
+    } elseif (-not $DkgIntegrity) {
+        Write-Warn2 "No checksum is pinned for $DkgPackage; it was not installed. Set BLACKBOX_DKG_INTEGRITY to its sha512 (npm view $DkgPackage dist.integrity), or BLACKBOX_DKG_INTEGRITY=unpinned to skip the check knowingly."
+        return $false
+    } else {
+        $packDir = Join-Path $env:TEMP ("blackbox-dkg-pack-" + [System.IO.Path]::GetRandomFileName())
+        New-Item -ItemType Directory -Force -Path $packDir | Out-Null
+        $packed = @(& npm pack $DkgPackage --pack-destination $packDir --silent 2>$null)
+        $packedFile = "$($packed | Select-Object -Last 1)".Trim()
+        if ($LASTEXITCODE -ne 0 -or -not $packedFile -or -not (Test-Path (Join-Path $packDir $packedFile))) {
+            Remove-Item $packDir -Recurse -Force -ErrorAction SilentlyContinue
+            Write-Warn2 "Could not download $DkgPackage from the npm registry."
             return $false
         }
-        Write-Ok "DKG package checksum matches the pinned one ($DkgPackage)"
+        $tarball = Join-Path $packDir $packedFile
+        $sha512 = [System.Security.Cryptography.SHA512]::Create()
+        $actual = "sha512-" + [Convert]::ToBase64String($sha512.ComputeHash([System.IO.File]::ReadAllBytes($tarball)))
+        if ($actual -ne $DkgIntegrity) {
+            Remove-Item $packDir -Recurse -Force -ErrorAction SilentlyContinue
+            Write-Warn2 "The downloaded $DkgPackage ($actual) is not the one this Blackbox release pins; it was not installed."
+            return $false
+        }
+        Write-Ok "DKG package checksum verified ($DkgPackage)"
     }
 
     if (Test-Path (Join-Path $DkgCliDir ".git")) {
@@ -1181,8 +1222,10 @@ for (const name of process.argv.slice(2)) if (pkg.allowScripts[name] !== false) 
 fs.writeFileSync(file, JSON.stringify(pkg, null, 2) + "\n");
 '@
     & node -e $allowScriptsMerge (Join-Path $DkgCliDir "package.json") @DkgAllowScripts
+    $installSpec = if ($tarball) { $tarball } else { $DkgPackage }
     try {
-        & npm install --prefix $DkgCliDir --prefer-online $DkgPackage 2>&1 | Tee-Object -FilePath $npmLog | Out-Null
+        & npm install --prefix $DkgCliDir --prefer-online $installSpec 2>&1 | Tee-Object -FilePath $npmLog | Out-Null
+        if ($tarball) { Remove-Item (Split-Path -Parent $tarball) -Recurse -Force -ErrorAction SilentlyContinue }
         if ($LASTEXITCODE -ne 0) { throw "npm install exit $LASTEXITCODE" }
     } catch {
         if ($backupDir) {
@@ -1408,6 +1451,7 @@ function Enable-AndConfigure {
     $configWriter = @'
 import sys, os
 cfg_path, dkg_url, dkg_home, dkg_bin, context_graph_id, graph_peer_id = sys.argv[1:7]
+repo_dir = sys.argv[7] if len(sys.argv) > 7 else ""
 try:
     try:
         import hermes_yaml as yaml  # Hermes 0.21.7+: YAML through ruamel (PyYAML left the host)
@@ -1424,6 +1468,7 @@ if os.path.exists(cfg_path):
 plugins = data.setdefault("plugins", {})
 entries = plugins.setdefault("entries", {})
 blackbox = entries.setdefault("blackbox", {})
+no_explicit_snapshot_profile = "snapshot_sync" not in blackbox
 legacy_dkg_urls = {"http://127.0.0.1:9200", "http://localhost:9200"}
 legacy_graphs = {"0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox", "umanitek/blackbox-threats-staging", "umanitek/guardian-threats-staging", "umanitek/guardian-threats"}
 legacy_peers = {"12D3KooWAuEHYTWbD3R3yPTcECCYZnrjHNpJmrUw5b4D5T3m5Kr3", "12D3KooWBY9jmNATMPv1DZcKbFas5RtjpkhT69pPwvkUBY2MMnDX", "12D3KooWQHQd1SNecrRxwceqPJkXS" + "K" + "EYn8vrV4QyJ2AfqeYwXz1E", "12D3KooWBJskzr2unXQG9mR3LRZFUJoxWr1PN6hTbyWyKndHXjZM"}
@@ -1475,6 +1520,11 @@ if current_graph in legacy_graphs:
 if not blackbox.get("graph_peer_id") or str(blackbox.get("graph_peer_id")) in legacy_peers:
     blackbox["graph_peer_id"] = graph_peer_id
     added.append("graph_peer_id")
+# One graph (2026-10-16): community reports live in the verified graph's shared
+# memory, so the separate community graph and its owner's peer id are dropped.
+for key in ("community_graph_id", "community_graph_peer_id"):
+    if blackbox.pop(key, None) is not None:
+        added.append(f"{key} (removed)")
 defaults = {
     "mode": "audit",
     "context_graph_id": context_graph_id,
@@ -1493,6 +1543,18 @@ defaults = {
     # Optional LLM reviewer — off until `blackbox setup-llm` fills it in.
     "llm": {"enabled": False, "provider": "", "model": "", "api_key": ""},
 }
+# Keep community protection and ordinary sync unless the installed plugin can
+# admit a snapshot attempt; DKG authenticates cores before accepting any data.
+if no_explicit_snapshot_profile:
+    try:
+        import runpy
+        from pathlib import Path
+        checkout = Path(repo_dir)
+        plugin = checkout if (checkout / "plugin.yaml").is_file() else checkout / "plugins" / "blackbox"
+        defaults.update(runpy.run_path(str(plugin / "setup" / "sync_defaults.py"))["defaults"](
+            {**defaults, **blackbox}, os.environ.get("BLACKBOX_DKG_NETWORK", "mainnet-base")))
+    except Exception:
+        print("  Keeping ordinary sync: the compatible Core-cache default is not available.")
 for k, v in defaults.items():
     if k not in blackbox:
         blackbox[k] = v
@@ -1501,7 +1563,6 @@ for k, v in defaults.items():
 # re-run and upgrade; only a pre-release opt-in (no consent record in force) is
 # migrated off. The product's own consent code decides; if it cannot be
 # imported the answer is "no consent" (fail closed = sharing off).
-repo_dir = sys.argv[7] if len(sys.argv) > 7 else ""
 def _consent_in_force(checkout):
     try:
         if checkout and os.path.isfile(os.path.join(checkout, "plugin.yaml")):
@@ -1710,7 +1771,8 @@ function Show-NextSteps {
   your agent meets a threat already listed in the verified threat graph, this
   node shares a privacy-safe statement (the threat's identifier and type, the
   tool that met it, blocked or flagged, and what the threat targets; never
-  prompts, commands, file paths or files) with the Blackbox community graph.
+  prompts, commands, file paths or files) with the Blackbox community, in that
+  graph's shared memory, where Umanitek's curators review it.
   Turn it on (this records your agreement to the reporter terms):
        blackbox report --enable-sharing      (or the dashboard's sharing toggle)
 "@ | Write-Host
@@ -1742,7 +1804,8 @@ function Show-NextSteps {
   your agent meets a threat already listed in the verified threat graph, this
   node shares a privacy-safe statement (the threat's identifier and type, the
   tool that met it, blocked or flagged, and what the threat targets; never
-  prompts, commands, file paths or files) with the Blackbox community graph.
+  prompts, commands, file paths or files) with the Blackbox community, in that
+  graph's shared memory, where Umanitek's curators review it.
   Turn it on (this records your agreement to the reporter terms):
        blackbox report --enable-sharing      (or the dashboard's sharing toggle)
 "@ | Write-Host

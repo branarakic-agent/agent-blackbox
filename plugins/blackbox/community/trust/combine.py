@@ -36,7 +36,7 @@ from dataclasses import replace
 from datetime import date
 from typing import Dict, Optional
 
-from ...kernel.signing.statement_order import CuratorStatement
+from ...kernel.signing import CuratorStatement
 from ..statements.curator_statements import CuratorRecord
 from ..statements.curator_view import STAGE_ENFORCEMENT_RANK, CountedAuthor, CuratorView
 

@@ -28,7 +28,7 @@ from typing import Any, Dict, FrozenSet, Iterable, Mapping, Optional, Sequence, 
 from ...kernel import threat_ids
 from ...kernel.config import BlackboxConfig
 from ...kernel.dkg_client import DkgClient, DkgError
-from ...kernel.signing.graph_migration import GraphMigration
+from ...kernel.signing import GraphMigration
 from ...kernel.store import StoreClient, loopback_store_url
 from .asset_facts import (ECOSYSTEM_COUNT_PREFIX, AssetFacts, AssetTier,
                           read_new_asset_facts, tier_assets, totals)

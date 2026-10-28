@@ -73,3 +73,8 @@ def _read_up_to(descriptor: int, limit: int) -> bytes:
         chunks.append(chunk)
         remaining -= len(chunk)
     return b"".join(chunks)
+
+
+from .probe_stamp import ProbeStamp   # the stamp shares this package: a small file read on the hot path
+from .atomic_write import atomic_write   # and the one torn-free write
+__all__ = ["ProbeStamp", "atomic_write", "read_small_text"]   # the surface other modules may import

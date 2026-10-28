@@ -39,7 +39,7 @@ from dataclasses import dataclass, replace
 from enum import Enum
 from typing import Dict, Iterable, Mapping, Optional, Tuple
 
-from ..kernel.signing.statement_order import CuratorStatement
+from ..kernel.signing import CuratorStatement
 from .statements.curator_view import CuratorView
 from . import allowlist
 from .statements.lifetimes import lifetime_days

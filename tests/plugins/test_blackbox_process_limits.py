@@ -26,7 +26,7 @@ def test_dkg_heap_uses_smallest_host_or_cgroup_limit():
         mock.patch.object(LIMITS, "read_cgroup_memory_limit", return_value=4 * gb),
         mock.patch.object(LIMITS, "read_physical_memory", return_value=48 * gb),
     ):
-        assert LIMITS.resolve_dkg_heap_mb() == 3072
+        assert LIMITS.resolve_dkg_heap_mb() == 2048      # half: the store is a second process on the machine
 
     with (
         mock.patch.object(LIMITS, "read_cgroup_memory_limit", return_value=None),
@@ -159,3 +159,31 @@ def test_both_installers_record_the_limits_they_chose(installer):
     text = (REPO / installer).read_text(encoding="utf-8")
 
     assert "write-limits" in text
+
+
+# --- the store shares the machine: half the memory, fewer sync slots below 8 GB (2026-10-22) ---
+
+def test_a_four_gb_machine_leaves_half_for_the_store_and_runs_four_syncs_at_once():
+    gb = 1024**3
+    with (
+        mock.patch.object(LIMITS, "read_cgroup_memory_limit", return_value=None),
+        mock.patch.object(LIMITS, "read_physical_memory", return_value=4 * gb),
+    ):
+        assert LIMITS.resolve_dkg_heap_mb() == 2048
+        assert LIMITS.sync_slots() == (4, 8)
+
+
+def test_eight_gb_and_up_keep_the_nodes_own_defaults():
+    assert LIMITS.sync_slots(8192) == (10, 20)
+    assert LIMITS.sync_slots(16384) == (10, 20)
+    assert LIMITS.sync_slots(None) == (10, 20)      # unknown memory: never a reason to slow the node down
+    assert LIMITS.sync_slots(4096) == (4, 8)
+
+
+def test_the_node_profile_carries_the_machines_slots(monkeypatch):
+    from plugins.blackbox.sync import node_profile
+
+    monkeypatch.setattr(LIMITS, "effective_memory_mb", lambda: 4096)
+    settings = node_profile.node_sync_settings(BlackboxConfig(context_graph_id="0xowner/other-graph"))
+
+    assert (settings["DKG_SYNC_GLOBAL_MAX_INFLIGHT"], settings["DKG_SYNC_GLOBAL_QUEUE_LIMIT"]) == ("4", "8")

@@ -11,6 +11,8 @@ The curl path (BLACKBOX_SETUP_ONLY unset) is unchanged.
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import re
 import shlex
 import shutil
@@ -55,7 +57,7 @@ main
 def test_curl_install_runs_every_step_in_the_same_order_as_before():
     steps = _main_steps(setup_only=False)
 
-    assert steps[:10] == ["banner", "detect_os", "check_git", "check_python", "ensure_node", "resolve_repo",
+    assert steps[:12] == ["banner", "detect_os", "install_record_begin", "preflight_install", "check_git", "check_python", "ensure_node", "resolve_repo",
                           "release_old_hermes_link", "install_python_env", "link_hermes", "refresh_blackbox_plugin_copy"]
     assert steps.index("run_hermes_setup") < steps.index("install_dkg")
 
@@ -65,9 +67,10 @@ def test_setup_only_skips_the_hermes_steps_and_keeps_everything_after():
     setup = _main_steps(setup_only=True)
 
     assert not set(HERMES_STEPS) & set(setup)
-    assert setup[:4] == ["banner", "detect_os", "ensure_node", "use_running_hermes"]
+    assert setup[:6] == ["banner", "detect_os", "install_record_begin", "preflight_install", "ensure_node",
+                         "use_running_hermes"]
     after_hermes = curl[curl.index("run_hermes_setup") + 1:]
-    assert setup[4:] == after_hermes
+    assert setup[6:] == after_hermes
 
 
 def _use_running_hermes(tmp_path: Path, *, hermes_on_path: bool, inner_bin: Path | None = None) -> tuple[subprocess.CompletedProcess, Path]:
@@ -220,26 +223,39 @@ def test_the_config_writer_is_given_the_plugin_folder_in_setup_only_mode():
     assert '"${BLACKBOX_PLUGIN_DIR:-$REPO_DIR}" <<\'PYEOF\'' in _body("enable_and_configure")
 
 
-def _install_dkg_package(tmp_path: Path, *, pinned: str, published: str) -> subprocess.CompletedProcess:
-    """install_blackbox_dkg_package with a stub npm that publishes *published* and logs installs."""
+TARBALL = b"the dkg tarball"
+TARBALL_SHA512 = "sha512-" + base64.b64encode(hashlib.sha512(TARBALL).digest()).decode()
+
+
+def _install_dkg_package(tmp_path: Path, *, pinned: str) -> subprocess.CompletedProcess:
+    """install_blackbox_dkg_package with a stub npm: `pack` writes TARBALL into --pack-destination,
+    every other call is logged and fails (so the function stops right after the install call)."""
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     log = tmp_path / "npm-calls"
     npm = fake_bin / "npm"
     npm.write_text(f"""#!/bin/sh
 echo "$*" >> {shlex.quote(str(log))}
-if [ "$1" = view ]; then echo {shlex.quote(published)}; exit 0; fi
+if [ "$1" = pack ]; then
+  dest=""; prev=""
+  for a in "$@"; do [ "$prev" = --pack-destination ] && dest="$a"; prev="$a"; done
+  printf '%s' {shlex.quote(TARBALL.decode())} > "$dest/dkg-10.0.23.tgz"; echo dkg-10.0.23.tgz; exit 0
+fi
 exit 1
 """, encoding="utf-8")
     npm.chmod(0o755)
+    node_dir = Path(shutil.which("node")).parent if shutil.which("node") else Path("/usr/bin")
     script = f"""
 warn() {{ echo "WARN $*"; }}
 ok() {{ echo "OK $*"; }}
 step() {{ :; }}
+fetch_pinned_dkg_tarball() {{
+{_body("fetch_pinned_dkg_tarball")}
+}}
 install_blackbox_dkg_package() {{
 {_body("install_blackbox_dkg_package")}
 }}
-PATH={shlex.quote(str(fake_bin))}:/usr/bin:/bin
+PATH={shlex.quote(str(fake_bin))}:{shlex.quote(str(node_dir))}:/usr/bin:/bin
 HERMES_HOME={shlex.quote(str(tmp_path / "home"))}
 BLACKBOX_DKG_CLI_DIR={shlex.quote(str(tmp_path / "dkg"))}
 BLACKBOX_DKG_PACKAGE=@origintrail-official/dkg@10.0.23
@@ -248,22 +264,50 @@ install_blackbox_dkg_package
 """
     result = subprocess.run(["bash", "-c", script], capture_output=True, text=True, check=False)
     result.calls = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+    result.said = result.stdout + result.stderr      # the fetch function's warnings go to stderr
     return result
 
 
-def test_a_pinned_dkg_package_with_another_checksum_is_never_installed(tmp_path):
-    result = _install_dkg_package(tmp_path, pinned="sha512-pinned", published="sha512-something-else")
+@pytest.mark.skipif(shutil.which("node") is None, reason="node computes the tarball's checksum")
+def test_a_pinned_dkg_package_whose_download_has_another_checksum_is_never_installed(tmp_path):
+    result = _install_dkg_package(tmp_path, pinned="sha512-pinned")
 
     assert result.returncode == 1
-    assert "not the one this Blackbox release pins" in result.stdout
+    assert "is not the one this Blackbox release pins" in result.said
     assert not any(call.startswith("install") for call in result.calls)
 
 
-def test_a_pinned_dkg_package_with_the_pinned_checksum_goes_on_to_install(tmp_path):
-    result = _install_dkg_package(tmp_path, pinned="sha512-pinned", published="sha512-pinned")
+@pytest.mark.skipif(shutil.which("node") is None, reason="node computes the tarball's checksum")
+def test_a_download_that_matches_the_pin_is_what_npm_installs(tmp_path):
+    """The checksum is taken on the tarball npm will install, not on the registry's claim."""
+    result = _install_dkg_package(tmp_path, pinned=TARBALL_SHA512)
 
-    assert "checksum matches the pinned one" in result.stdout
-    assert any(call.startswith("install") and "@origintrail-official/dkg@10.0.23" in call for call in result.calls)
+    assert "OK DKG package checksum verified" in result.said
+    installs = [call for call in result.calls if call.startswith("install")]
+    assert len(installs) == 1 and installs[0].endswith("/dkg-10.0.23.tgz")
+
+
+def test_no_pin_installs_nothing_and_says_how_to_pin(tmp_path):
+    result = _install_dkg_package(tmp_path, pinned="")
+
+    assert result.returncode == 1
+    assert "No checksum is pinned" in result.said and "BLACKBOX_DKG_INTEGRITY=unpinned" in result.said
+    assert result.calls == []
+
+
+def test_unpinned_is_a_knowing_opt_out(tmp_path):
+    result = _install_dkg_package(tmp_path, pinned="unpinned")
+
+    assert "WARN BLACKBOX_DKG_INTEGRITY=unpinned" in result.said
+    installs = [call for call in result.calls if call.startswith("install")]
+    assert len(installs) == 1 and installs[0].endswith(" @origintrail-official/dkg@10.0.23")
+
+
+def test_the_default_package_carries_the_default_pin():
+    text = INSTALL_SH.read_text(encoding="utf-8")
+    assert 'BLACKBOX_DKG_DEFAULT_PACKAGE="@origintrail-official/dkg@10.0.26"' in text
+    assert 'BLACKBOX_DKG_DEFAULT_INTEGRITY="sha512-' in text and "UNSET" not in text
+    assert 'BLACKBOX_DKG_INTEGRITY="$BLACKBOX_DKG_DEFAULT_INTEGRITY"' in text
 
 
 # -- the Windows installer: the same contract (parsed by its own toolchain in CI, LES-037) --------
@@ -299,7 +343,8 @@ def test_windows_keeps_sharing_on_and_pins_the_dkg_checksum():
 
     assert 'os.path.isfile(os.path.join(checkout, "plugin.yaml"))' in text
     assert "$(if ($env:BLACKBOX_PLUGIN_DIR) { $env:BLACKBOX_PLUGIN_DIR } else { $RepoDir })" in text
-    assert "if ($published -ne $DkgIntegrity)" in _ps1_function("Install-BlackboxDkgPackage")
+    assert "if ($actual -ne $DkgIntegrity)" in _ps1_function("Install-BlackboxDkgPackage")
+    assert '$DkgDefaultIntegrity = "sha512-' in text and "UNSET" not in text
     assert '$DkgAllowScripts = @("@origintrail-official/dkg", "better-sqlite3", "@openuidev/lang-core")' in text
     assert '-SimpleMatch "had install scripts blocked"' in _ps1_function("Install-BlackboxDkgPackage")
     assert "& npm rebuild --prefix $DkgCliDir better-sqlite3" in _ps1_function("Install-BlackboxDkgPackage")
@@ -329,7 +374,7 @@ HERMES_HOME={shlex.quote(str(tmp_path / "home"))}
 BLACKBOX_DKG_CLI_DIR={shlex.quote(str(cli_dir))}
 BLACKBOX_DKG_BIN={shlex.quote(str(cli_dir / "missing-dkg"))}
 BLACKBOX_DKG_PACKAGE=@origintrail-official/dkg@10.0.23
-BLACKBOX_DKG_INTEGRITY=
+BLACKBOX_DKG_INTEGRITY=unpinned
 install_blackbox_dkg_package
 """
     result = subprocess.run(["bash", "-c", script], capture_output=True, text=True, check=False)
@@ -459,7 +504,7 @@ HERMES_HOME={shlex.quote(str(tmp_path / "home"))}
 BLACKBOX_DKG_CLI_DIR={shlex.quote(str(cli_dir))}
 BLACKBOX_DKG_BIN={shlex.quote(str(cli_dir / "missing-dkg"))}
 BLACKBOX_DKG_PACKAGE=@origintrail-official/dkg@10.0.23
-BLACKBOX_DKG_INTEGRITY=
+BLACKBOX_DKG_INTEGRITY=unpinned
 install_blackbox_dkg_package
 """
     result = subprocess.run(["bash", "-c", script], capture_output=True, text=True, check=False)

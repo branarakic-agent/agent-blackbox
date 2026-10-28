@@ -462,7 +462,7 @@ from plugins.blackbox.curate.console.roster import (
     SignedList,
     renewal_status,
 )
-from plugins.blackbox.curate.proposal import ProposalState, ProposalStore
+from plugins.blackbox.curate.proposals.proposal import ProposalState, ProposalStore
 from plugins.blackbox.kernel.signing import key_manifest as km
 from plugins.blackbox.kernel.signing.trust_anchors import RootPins
 
@@ -843,7 +843,7 @@ from plugins.blackbox.curate.lab.jobs import LabJobStore
 from plugins.blackbox.curate.publishing.ledger import BatchEntry, PublishLedger, PublishState
 from plugins.blackbox.curate.queue import Lane
 from plugins.blackbox.curate.sources import LookupItem
-from plugins.blackbox.curate.transport import ALARM_AFTER_BEATS, DeliveryLedger
+from plugins.blackbox.curate.proposals.transport import ALARM_AFTER_BEATS, DeliveryLedger
 from plugins.blackbox.kernel.health.manifest_watch import key_fingerprint
 
 _LAB_PEER = "12D3KooWBJskzr2unXQG9mR3LRZFUJoxWr1PN6hTbyWyKndHXjZM"

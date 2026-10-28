@@ -41,22 +41,21 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
-import secrets
 import urllib.parse
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone, UTC
+from datetime import date, datetime, timedelta, UTC
 from pathlib import Path
-from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Callable, Mapping, Optional, Sequence
 
-from ...kernel.signing.statement_order import CuratorStatement
+from ...kernel.signing import CuratorStatement
 from .. import keys
 from ..context import CurateContext
-from ..proposal import Proposal, ProposalState, ProposalStore
+from ..proposals import Proposal, ProposalState, ProposalStore
 from ..service.evidence import Lookup
 from .client import HttpClient, UrllibClient
 from .protocol import Source
+from ...kernel.bounded_files import atomic_write
 
 logger = logging.getLogger(__name__)
 
@@ -267,6 +266,4 @@ class WithdrawalWatcher:
 
     def _record_run(self, day: date) -> None:
         self._state_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self._state_path.with_name(f"{self._state_path.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}")
-        tmp.write_text(json.dumps({"last_run": day.isoformat()}), encoding="utf-8")
-        os.replace(tmp, self._state_path)
+        atomic_write(self._state_path, json.dumps({"last_run": day.isoformat()}))

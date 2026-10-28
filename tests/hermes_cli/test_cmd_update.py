@@ -96,6 +96,20 @@ class TestGitTrampolineSelfHeal:
         out = capsys.readouterr().out
         assert "ZIP path" in out
 
+    @pytest.mark.parametrize("env", ["ucrt64", "mingw64", "clangarm64", "mingw32"])
+    def test_locate_real_git_knows_every_git_for_windows_layout(self, monkeypatch, env):
+        """Git for Windows v2.56.0 moved x64 from ``mingw64`` to ``ucrt64``; a locator that only knew the
+        old folder found no real git on a current install (fork CI, windows-2025 image, git 2.56.0.2)."""
+        from pathlib import Path
+
+        from hermes_cli import update_cmd_git
+
+        monkeypatch.setattr(Path, "exists", lambda self: env in self.parts and self.name == "git.exe")
+        monkeypatch.setattr(update_cmd_git, "_probe_fork_bomb", lambda argv: False)
+        monkeypatch.setattr(update_cmd_git, "_portable_git_candidates", list)
+        real = update_cmd_git._locate_real_git()
+        assert real is not None and real.parts[-4:] == (env, "libexec", "git-core", "git.exe")
+
     @pytest.mark.platforms("not windows")
     def test_off_windows_noop(self):
         from hermes_cli import update_cmd
@@ -106,8 +120,7 @@ class TestGitTrampolineSelfHeal:
         assert result == git_cmd
         run.assert_not_called()
 
-    @pytest.mark.parametrize("arch", ["mingw64", "ucrt64"])
-    def test_portable_git_candidates_check_shared_root_first(self, tmp_path, monkeypatch, arch):
+    def test_portable_git_candidates_check_shared_root_first(self, tmp_path, monkeypatch):
         # Profile-scoped layout: HERMES_HOME = <root>/profiles/foo, but the
         # PortableGit tree lives under the SHARED root (monerostar review on
         # #88136). The candidate list must check get_default_hermes_root()
@@ -122,6 +135,9 @@ class TestGitTrampolineSelfHeal:
         monkeypatch.setattr(hermes_constants, "get_hermes_home", lambda: profile_home)
 
         candidates = _portable_git_candidates()
-        shared = root / "git" / arch / "libexec" / "git-core" / "git.exe"
-        profile = profile_home / "git" / arch / "libexec" / "git-core" / "git.exe"
-        assert candidates.index(shared) < candidates.index(profile)
+        assert candidates[0] == (
+            root / "git" / "mingw64" / "libexec" / "git-core" / "git.exe"
+        )
+        assert candidates[1] == (
+            profile_home / "git" / "mingw64" / "libexec" / "git-core" / "git.exe"
+        )

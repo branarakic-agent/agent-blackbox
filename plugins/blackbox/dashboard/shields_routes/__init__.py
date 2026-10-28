@@ -50,7 +50,8 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Callable, Optional
 
-from ... import shields
+from ... import audit, shields
+from ...kernel.config import load_blackbox_config
 from ...kernel.display_safety import strip_controls
 from ..safe_payloads import safe_identifier, safe_text
 
@@ -158,11 +159,20 @@ def statuses_payload() -> list[Any]:
 
 
 def events_payload(shield_id: str) -> list[Any] | None:
-    """*shield_id*'s events report as served, sanitised once; None when no shield has that id."""
+    """*shield_id*'s events report as served, sanitised once; None when no shield has that id.
+
+    In sandbox mode the Playground's tests are events too (Amos, 2026-10-27): the same report
+    read from the sandbox's own logs, each marked ``"sandbox": true``, merged newest first —
+    the real logs are never mixed with them anywhere but on this page."""
     shield = shields.get(shield_id)
     if shield is None:
         return None
-    return [sanitised(event.as_json(), _local_text) for event in shield.events()]
+    rows = [sanitised(event.as_json(), _local_text) for event in shield.events()]
+    if load_blackbox_config().community_sandbox:
+        with audit.sandbox_run():
+            tests = [{**sanitised(event.as_json(), _local_text), "sandbox": True} for event in shield.events()]
+        rows = sorted(rows + tests, key=lambda row: float(row.get("ts") or 0), reverse=True)
+    return rows
 
 
 def browser_folder_rows(shield_id: str) -> list[dict[str, Any]]:

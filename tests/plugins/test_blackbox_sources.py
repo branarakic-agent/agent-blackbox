@@ -1037,7 +1037,7 @@ def test_the_http_client_reads_an_unreachable_source_as_could_not_tell():
 
 # -- the withdrawal watcher and the 180-day address expiry (SRC4, §03.3, F-007/F-022) ------------
 
-from plugins.blackbox.curate.proposal import ProposalStore
+from plugins.blackbox.curate.proposals.proposal import ProposalStore
 from plugins.blackbox.curate.sources import withdrawal
 from plugins.blackbox.curate.sources.withdrawal import CitedConfirmation, WithdrawalWatcher
 from plugins.blackbox.curate.watch import SigningLog

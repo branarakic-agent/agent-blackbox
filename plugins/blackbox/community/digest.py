@@ -46,6 +46,7 @@ from ..kernel.dkg_client import DkgClient
 from ..kernel import identity
 from . import report_signer, sharing
 from .report_signer import DIGEST_STATEMENT, ReportSigner
+from ..kernel.bounded_files import atomic_write
 
 logger = logging.getLogger(__name__)
 
@@ -184,9 +185,7 @@ class SightingTally:
         state["published"] = [w for w in state["published"] if w in weeks]  # type: ignore[index]
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self._path.with_name(f"{self._path.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}")
-            tmp.write_text(json.dumps(state), encoding="utf-8")
-            os.replace(tmp, self._path)
+            atomic_write(self._path, json.dumps(state))
         except OSError as exc:   # fail-open: an unwritable home only loses this week's counts
             logger.warning("blackbox: could not save the sighting tally (%s)", exc)
 
@@ -263,7 +262,7 @@ def publish_due_digests(client: DkgClient, cfg: BlackboxConfig, tally: Optional[
     if not due:
         return 0
     reporter = identity.reporter_address(client)
-    signer = report_signer.resolve_report_signer(client, cfg.community_graph_id)
+    signer = report_signer.resolve_report_signer(client, cfg.context_graph_id)
     if not reporter or signer is None:
         logger.debug("blackbox: sighting digest not published (no identity or signer)")
         return 0
@@ -272,7 +271,7 @@ def publish_due_digests(client: DkgClient, cfg: BlackboxConfig, tally: Optional[
         entries = build_digest(tally.counts(week))
         quads = build_digest_quads(reporter_address=reporter, week=week, entries=entries, signer=signer)
         name = f"digest-{threat_ids.stable_hash(reporter + week, 16)}"
-        outcome, detail = sharing.send_report(client, cfg.community_graph_id, name, quads)
+        outcome, detail = sharing.send_report(client, cfg.context_graph_id, name, quads)
         audit.record_share_outcome(identifier=f"digest:{week}", category="digest", severity="info",
                                    subject=digest_subject(reporter, week), asset_name=name,
                                    ok=outcome is sharing.ShareOutcome.ACCEPTED, error=detail, outcome=outcome.value)

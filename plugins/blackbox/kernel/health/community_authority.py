@@ -18,8 +18,8 @@ into items. ``kernel.health.operator_health`` adds them to the operator's list.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
-from typing import Any, List, Optional, Tuple
+from typing import Any, Optional
+from .days import days_between
 
 #: A curator key without a heartbeat for longer than this is silent (plan §13: 48 hours).
 HEARTBEAT_SILENCE_DAYS = 2
@@ -56,12 +56,6 @@ class CommunityAuthorityInputs:
     today: str = ""
 
 
-def _days_between(earlier: str, later: str) -> int:
-    try:
-        return (date.fromisoformat(later) - date.fromisoformat(earlier)).days
-    except ValueError:
-        return 0
-
 
 def gather(view: Optional[Any], today: str) -> CommunityAuthorityInputs:
     """The inputs from the community authority's own view (``CuratorView.community``; None = no community authority)."""
@@ -70,7 +64,7 @@ def gather(view: Optional[Any], today: str) -> CommunityAuthorityInputs:
     manifest = getattr(view, "manifest", None)
     keys = tuple(manifest.curator_keys) if manifest is not None else ()
     beats = dict(getattr(view, "heartbeats", {}) or {})
-    silent = sum(1 for key in keys if not beats.get(key) or _days_between(beats[key], today) > HEARTBEAT_SILENCE_DAYS)
+    silent = sum(1 for key in keys if not beats.get(key) or days_between(beats[key], today) > HEARTBEAT_SILENCE_DAYS)
     return CommunityAuthorityInputs(
         trusted=manifest is not None, keys=len(keys), silent_keys=silent,
         last_heartbeat=max((beats[key] for key in keys if beats.get(key)), default=""),
@@ -115,7 +109,7 @@ def alarms(inputs: CommunityAuthorityInputs) -> list[Alarm]:
         out.append(("info", f"a new community curator key manifest takes effect on {inputs.manifest_state_day} (time-lock)",
                     "nothing to do — the previous manifest stays in force until then"))
     if (inputs.manifest_expires_day and inputs.today   # a stale manifest's expiry is in the past: never announced twice
-            and 0 <= _days_between(inputs.today, inputs.manifest_expires_day) <= EXPIRY_NOTICE_DAYS):
+            and 0 <= days_between(inputs.today, inputs.manifest_expires_day) <= EXPIRY_NOTICE_DAYS):
         out.append(("info", f"the community curator key manifest expires on {inputs.manifest_expires_day}",
                     "nothing to do — the community root publishes a new one; flags in force stay either way"))
     return out

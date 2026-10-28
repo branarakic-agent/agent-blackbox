@@ -31,16 +31,16 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, replace
-from datetime import datetime, timezone, UTC
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Iterable, Optional
 
 from ... import community
 from ...community import reputation
 from ...detection import osv
-from ...kernel.signing.authority import Authority
-from ...kernel.signing.statement_order import CuratorStatement
+from ...kernel.signing import Authority
+from ...kernel.signing import CuratorStatement
 from ..context import CurateContext, verified_identifiers
 from . import novelty_facts
+from ...kernel.health import today_utc
 
 logger = logging.getLogger(__name__)
 
@@ -58,9 +58,6 @@ class CreditReport:
     available: bool = True
 
 
-def _today() -> str:
-    return datetime.now(UTC).date().isoformat()
-
 
 def credit_verdicts(ctx: CurateContext, *, osv_lookup: Optional[novelty_facts.OsvLookup] = None,
                     ledger: Optional[reputation.ReputationLedger] = None, also: Iterable[str] = ()) -> CreditReport:
@@ -75,7 +72,7 @@ def credit_verdicts(ctx: CurateContext, *, osv_lookup: Optional[novelty_facts.Os
     rows = community.fetch_community_report_rows(ctx.client, ctx.cfg)
     if rows is None:
         return CreditReport(available=False)
-    reports, _ = community.verify_report_rows(rows, community.ReportVerifier(ctx.environment, ctx.community_graph))
+    reports, _ = community.verify_report_rows(rows, community.ReportVerifier(ctx.environment, ctx.verified_graph))
     by_threat: dict[str, list[Any]] = {}
     first_day: dict[str, str] = {}
     for report in reports:
@@ -103,7 +100,7 @@ def credit_verdicts(ctx: CurateContext, *, osv_lookup: Optional[novelty_facts.Os
                                 publisher=facts.publisher if earns else ""):
                 credited += 1
                 novel += 1 if earns else 0
-    sync_bands(own, book, _today())
+    sync_bands(own, book, today_utc())
     if credited:
         logger.info("blackbox: credited %d reporter outcome(s) from published verdicts (%d novel)", credited, novel)
     return CreditReport(credited=credited, novel=novel)
@@ -138,7 +135,7 @@ def overlap_rings(ctx: CurateContext) -> list[frozenset]:
     rows = community.fetch_community_report_rows(ctx.client, ctx.cfg)
     if rows is None:
         return []
-    reports, _ = community.verify_report_rows(rows, community.ReportVerifier(ctx.environment, ctx.community_graph))
+    reports, _ = community.verify_report_rows(rows, community.ReportVerifier(ctx.environment, ctx.verified_graph))
     by_key: dict[str, set] = {}
     for report in reports:
         by_key.setdefault(report.author, set()).add(report.identifier)

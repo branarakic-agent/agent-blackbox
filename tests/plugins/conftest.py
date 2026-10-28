@@ -16,13 +16,36 @@ _REAL_IN_FORCE = _consent_module.in_force
 
 @pytest.fixture(autouse=True)
 def _fresh_community_membership(monkeypatch):
-    """Blackbox keeps per-process subscribe/join state (community/membership.py);
+    """Blackbox keeps per-process subscribe/join state (community/membership/);
     each test starts from a fresh one so retry windows never leak between tests.
     Only touches the module when a test has already imported it."""
     for name in ("plugins.blackbox.community.membership", "hermes_plugins.blackbox.community.membership"):
         module = sys.modules.get(name)
         if module is not None:
             monkeypatch.setattr(module, "MEMBERSHIP", module.CommunityMembership())
+    yield
+
+
+class _NothingAddedYet:
+    """KI-449 test double: no community subscription recorded, and nothing written to the
+    real Blackbox home. The record itself is tested with an explicit
+    ``CommunityMembership(readiness=GraphReadiness(...))``."""
+
+    def shared_memory_added(self, graph):
+        return False
+
+    def mark_shared_memory_added(self, graph):
+        return None
+
+
+@pytest.fixture(autouse=True)
+def _verified_graph_ready(monkeypatch):
+    """Membership's community record (KI-449) never touches the real Blackbox home in
+    tests. Only touches the module when a test has already imported it."""
+    for name in ("plugins.blackbox.community.membership", "hermes_plugins.blackbox.community.membership"):
+        module = sys.modules.get(name)
+        if module is not None:
+            monkeypatch.setattr(module, "READINESS", _NothingAddedYet())
     yield
 
 
@@ -69,11 +92,11 @@ def time_lock_one_day(monkeypatch):
 
 
 @pytest.fixture
-def no_community_graph(monkeypatch):
-    """Load settings as an install with NO community graph would: the shipped
-    default is the production graph (2026-10-12), so tests of the dormant path
-    say "no graph" explicitly instead of relying on an empty default."""
+def no_graph(monkeypatch):
+    """Load settings as an install that names NO graph would: the shipped default
+    is the verified graph, where the community also lives (one graph since
+    2026-10-16), so tests of the dormant path say "no graph" explicitly instead of
+    relying on an empty default."""
     from plugins.blackbox.kernel import constants
-    monkeypatch.setattr(constants, "DEFAULT_COMMUNITY_GRAPH_ID", "")
-    monkeypatch.setattr(constants, "DEFAULT_COMMUNITY_GRAPH_PEER_ID", "")
-    monkeypatch.delenv("BLACKBOX_COMMUNITY_GRAPH_ID", raising=False)
+    monkeypatch.setattr(constants, "DEFAULT_CONTEXT_GRAPH_ID", "")
+    monkeypatch.delenv("BLACKBOX_CONTEXT_GRAPH_ID", raising=False)

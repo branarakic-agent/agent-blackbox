@@ -27,7 +27,7 @@ from typing import Any, Callable, Dict, Optional, Tuple
 from ...community import CuratorView, reputation
 from ...detection import osv
 from ...kernel import threat_ids
-from ...kernel.signing.statement_order import CuratorStatement
+from ...kernel.signing import CuratorStatement
 
 #: A listing is proposed for renewal this many days before it expires (plan §13).
 RENEW_AHEAD_DAYS = 30

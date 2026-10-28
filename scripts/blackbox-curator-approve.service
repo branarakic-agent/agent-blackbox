@@ -1,0 +1,15 @@
+# Owner node only: admit Blackbox nodes that ask to join the verified graph (sync allowlist;
+# no publish right) and keep the reports/sandbox lanes registered. Installed by hand on the
+# curator node next to blackbox-curator-config.py; see scripts/blackbox-curator-approve.py.
+[Unit]
+Description=Blackbox: approve join requests for the verified graph (sync allowlist only)
+After=dkg-node.service
+Wants=dkg-node.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+Environment=HOME=/home/ubuntu
+ExecStart=/usr/bin/python3 /home/ubuntu/.local/libexec/blackbox-curator-approve.py --graph 0x37b1Fdfd134e2b17583bCBdD3034F91504cD9C70/agent-blackbox-vm --ensure-lanes
+# exit 2 = the node could not be asked; the next tick tries again
+SuccessExitStatus=0 2

@@ -42,7 +42,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 from ...kernel import constants, signing, threat_ids
 from ...kernel.dkg_client import extract_binding
 from ...kernel.signing import key_manifest
-from ...kernel.signing.statement_order import CuratorStatement
+from ...kernel.signing import CuratorStatement
 from ...kernel.store import StoreClient
 from .. import graph_queries, row_adapters
 from ..partitions import rows_from_triples

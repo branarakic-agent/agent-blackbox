@@ -23,6 +23,7 @@ from datetime import date, timedelta
 from typing import Iterable, Optional
 
 from .bands import ReporterStanding, ReputationBand
+from ...kernel.health import days_between
 
 #: Forgetting: an outcome this many days old counts half.
 HALF_LIFE_DAYS = 180.0
@@ -47,18 +48,12 @@ class Outcome:
     confirmed: bool
 
 
-def _days_between(earlier: str, later: str) -> float:
-    try:
-        return float((date.fromisoformat(later) - date.fromisoformat(earlier)).days)
-    except ValueError:
-        return 0.0
-
 
 def beta_reputation(outcomes: Iterable[Outcome], today: str) -> float:
     """α / (α + β) over the outcomes, each weighted 0.5 ** (age / half-life)."""
     alpha, beta = PRIOR_ALPHA, PRIOR_BETA
     for outcome in outcomes:
-        weight = 0.5 ** (max(0.0, _days_between(outcome.day, today)) / HALF_LIFE_DAYS)
+        weight = 0.5 ** (max(0.0, days_between(outcome.day, today)) / HALF_LIFE_DAYS)
         if outcome.confirmed:
             alpha += weight
         else:
@@ -71,7 +66,7 @@ def graduates(standing: ReporterStanding, today: str) -> bool:
     no strike on record and no lockout running."""
     if standing.band is not ReputationBand.PROBATION or standing.locked_out(today) or not standing.first_seen_day:
         return False
-    return (_days_between(standing.first_seen_day, today) >= GRADUATION_MIN_DAYS
+    return (days_between(standing.first_seen_day, today) >= GRADUATION_MIN_DAYS
             and standing.novel_credits >= GRADUATION_MIN_NOVEL and standing.strikes == 0)
 
 

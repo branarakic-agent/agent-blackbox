@@ -75,7 +75,9 @@ def test_the_budget_defers_assets_to_the_next_refresh(tmp_path):
     assert index.index_missing_assets(_Node(GRAPHS), CG, budget_seconds=0) == 0
 
 
-def test_the_lookup_falls_back_only_after_the_store_could_not_answer(tmp_path):
+def test_the_lookup_falls_back_only_after_the_store_could_not_answer(tmp_path, monkeypatch):
+    from plugins.blackbox.ruleset.live import lookup as live_lookup
+    monkeypatch.setattr(live_lookup, "RETRY_AFTER_SECONDS", 0.0)   # this test is about fallback order, not the breaker
     index = live.FallbackIndex(INDEXED, tmp_path / "idx.sqlite")
     index.index_missing_assets(_Node(GRAPHS), CG)
     health = live.LookupHealth(tmp_path / "state.json")

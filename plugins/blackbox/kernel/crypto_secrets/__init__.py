@@ -29,7 +29,8 @@ Public surface:
 """
 
 from .seed_phrase import MARKER as SEED_PHRASE_MARKER
-from .seed_phrase import SeedPhraseRun, find_seed_phrase_runs, redact_seed_phrases, seed_phrase_spans, wordlist_ready
+from .seed_phrase import (SeedPhraseRun, find_seed_phrase_runs, phrase_from_entropy, redact_seed_phrases,
+                          seed_phrase_spans, wordlist_ready)
 from .solana_key import MARKER as SOLANA_KEY_MARKER
 from .solana_key import find_solana_secret_keys, is_solana_secret_key, redact_solana_keys, scan_solana_keys
 from .bitcoin_key import find_bitcoin_private_keys, redact_bitcoin_keys
@@ -54,6 +55,7 @@ __all__ = [
            "is_solana_secret_key",
            "misdirected_exchange_keys",
            "own_keys_in",
+           "phrase_from_entropy",
            "protocol_contract",
            "read_listed_addresses_from",
            "redact_bitcoin_keys",

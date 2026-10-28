@@ -88,6 +88,18 @@ def read_audit(limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
 
     Sorted by ``ts`` descending. Fail-open per source.
     """
+    return log_store.cached(f"audit:{log_store._home()}", _activity_log_paths(), _load_merged_audit)[offset : offset + limit]
+
+
+def _activity_log_paths() -> list[Any]:
+    """Every log the activity readers merge — the cache key's files."""
+    home = log_store._home()
+    paths = [path for path, _ in log_store._audit_files()]
+    paths += [home / "file_access.jsonl", home / "dependencies.jsonl"]
+    return paths + [path for path, _ in log_store._findings_files()]
+
+
+def _load_merged_audit() -> list[dict[str, Any]]:
     home = log_store._home()
     merged: list[dict[str, Any]] = []
     for path, framework in log_store._audit_files():
@@ -96,7 +108,7 @@ def read_audit(limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
     merged.extend(_tag_events(log_store._load_jsonl(home / "dependencies.jsonl", "dependency_install"), "dependency_install"))
     merged.extend(_finding_event_rows())
     merged.sort(key=lambda r: r.get("ts") or 0, reverse=True)
-    return merged[offset : offset + limit]
+    return merged
 
 
 def count_audit() -> int:
@@ -206,7 +218,14 @@ def read_local_activity(max_sessions: int = 60) -> dict[str, Any]:
     (``audit*.jsonl``, ``file_access.jsonl``, ``dependencies.jsonl``, findings) —
     never the DKG node. Each session carries its ordered events; each tool call
     carries the threats it triggered (matched by ``tool_call_id``). Newest first.
+    Rebuilt only when a log changed on disk (:func:`log_store.cached`); treat the
+    result as read-only.
     """
+    return log_store.cached(f"local-activity:{max_sessions}:{log_store._home()}", _activity_log_paths(),
+                            lambda: _build_local_activity(max_sessions))
+
+
+def _build_local_activity(max_sessions: int) -> dict[str, Any]:   # health: allow CC -- the body read_local_activity had; renamed for the cache (FIX-0162), baselined shrink-only
     home = log_store._home()
     raw: list[dict[str, Any]] = []
     for path, framework in log_store._audit_files():
@@ -257,7 +276,7 @@ def read_local_activity(max_sessions: int = 60) -> dict[str, Any]:
             if s["end"] is None or ts > s["end"]:
                 s["end"] = ts
 
-        if ev == "session_end":
+        if ev == "session_end":   # health: allow HX011 -- pre-existing ladder, renamed function only (FIX-0162)
             s["ended"] = True
             reason = str(det.get("reason") or "").lower()
             if det.get("interrupted") or reason in ("shutdown", "restart"):

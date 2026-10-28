@@ -35,20 +35,21 @@ import logging
 import time
 from collections import Counter
 from dataclasses import dataclass, fields
-from datetime import date, datetime, timezone, UTC
+from datetime import datetime, UTC
 from decimal import Decimal
-from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple, TypeVar
+from typing import Callable, Mapping, Optional, Sequence, TypeVar
 
-from ...kernel.health.manifest_watch import key_fingerprint
-from ...kernel.signing.statement_order import CuratorStatement
+from ...kernel.health import key_fingerprint
+from ...kernel.signing import CuratorStatement
 from .. import queue
 from ..context import CurateContext, verified_identifiers
 from ..lab.jobs import LabJobState, LabJobStore
 from ..publishing.ledger import PublishLedger
 from ..sources import LookupItem, queue_metrics
-from ..transport import DeliveryLedger
+from ..proposals import DeliveryLedger
 from ..watch import SigningLog
 from .roster import renewal_status
+from ...kernel.health import days_between
 
 logger = logging.getLogger(__name__)
 
@@ -241,7 +242,7 @@ def _key_list_values(ctx: CurateContext, today: str) -> dict[str, object]:
     if manifest is None:
         raise LookupError("no effective key list")
     beats = ctx.own_view.heartbeats
-    ages = {key_fingerprint(key): _days_between(beats[key], today) if beats.get(key) else NEVER
+    ages = {key_fingerprint(key): max(0, days_between(beats[key], today)) if beats.get(key) else NEVER
             for key in manifest.curator_keys}
     renewal = renewal_status(manifest, today)
     return {"curator_heartbeat_age_days": ages,
@@ -293,9 +294,6 @@ def _day(first_seen: object, today: str) -> str:
     except (TypeError, ValueError, OverflowError, OSError):
         return today
 
-
-def _days_between(earlier: str, later: str) -> int:
-    return max(0, (date.fromisoformat(later) - date.fromisoformat(earlier)).days)
 
 
 def _plain(value: object) -> object:

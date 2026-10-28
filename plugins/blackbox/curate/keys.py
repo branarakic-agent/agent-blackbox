@@ -18,7 +18,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..kernel import constants, reporter_key
-from ..kernel.signing.authority import Authority
+from ..kernel.signing import Authority
 
 CURATOR_KEY_FILE = "curator_key.pem"
 ROOT_KEY_FILE = "root_key.pem"

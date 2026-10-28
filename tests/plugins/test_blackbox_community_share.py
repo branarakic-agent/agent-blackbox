@@ -19,6 +19,7 @@ import time
 
 import pytest
 
+from _blackbox_fakes import FakeNodeClient
 from plugins.blackbox import audit, detection
 from plugins.blackbox.guard import hooks
 from plugins.blackbox import community as community_pkg
@@ -35,7 +36,7 @@ from plugins.blackbox.kernel.dkg_client import DkgError
 DEV_GRAPH = "0x51E5dE758A45c8b64048E29918421F0bdD6D5d5C/agent-blackbox-community-dev"
 REPORTER = "0xabc0000000000000000000000000000000000001"
 
-CFG_ON = BlackboxConfig(report=True, community_graph_id=DEV_GRAPH)
+CFG_ON = BlackboxConfig(report=True, context_graph_id=DEV_GRAPH)
 
 
 @pytest.fixture
@@ -53,24 +54,12 @@ def _fresh_reporter_cache(monkeypatch):
 TEST_NETWORK = "test-network-id"
 
 
-class FakeClient:
-    """Captures share calls; resolves a real-looking identity."""
+class FakeClient(FakeNodeClient):
+    """The shared fake, bound to this file's reporter and network; ``fail`` = a node failure whose text carries a secret."""
 
     def __init__(self, fail=False):
-        self.shares = []
-        self.fail = fail
-
-    def agent_identity(self):
-        return {"agentAddress": REPORTER}
-
-    def status(self):
-        return {"networkId": TEST_NETWORK}  # real nodes always report one; signing needs it (R0b)
-
-    def share_knowledge_asset(self, cg_id, name, q, **kw):
-        if self.fail:
-            raise DkgError("simulated node failure with a Bearer sk-secret-token inside")
-        self.shares.append((cg_id, name, q))
-        return {"state": "succeeded"}
+        super().__init__(REPORTER, TEST_NETWORK,
+                         failure=DkgError("simulated node failure with a Bearer sk-secret-token inside") if fail else None)
 
 
 def _fields_for(identifier):
@@ -126,8 +115,8 @@ def _shareable(identifier, **kw):
         (CFG_ON, "secret", "secret:aws", REPORTER, False),
         (CFG_ON, "public", "", REPORTER, False),  # no identifier
         (CFG_ON, "public", "dep:npm:x@1", None, False),  # no identity (KI-003)
-        (BlackboxConfig(report=False, community_graph_id=DEV_GRAPH), "public", "dep:npm:x@1", REPORTER, False),
-        (BlackboxConfig(report=True, community_graph_id=""), "public", "dep:npm:x@1", REPORTER, False),
+        (BlackboxConfig(report=False, context_graph_id=DEV_GRAPH), "public", "dep:npm:x@1", REPORTER, False),
+        (BlackboxConfig(report=True, context_graph_id=""), "public", "dep:npm:x@1", REPORTER, False),
     ],
 )
 def test_policy_truth_table(cfg, source, identifier, reporter, expected):
@@ -179,13 +168,13 @@ def test_verified_match_still_auto_shares(monkeypatch, bb_home):
 # ---------------------------------------------------------------------------
 
 
-def test_share_targets_community_graph_never_verified(bb_home):
+def test_a_sighting_goes_to_the_verified_graphs_shared_memory_never_its_verified_memory(bb_home):
+    """One graph (2026-10-16): a sighting is shared into the verified graph's SHARED
+    memory — ``share_knowledge_asset``, which writes the community sub-graph and never
+    publishes. Only the curator publishes to the graph's Verified Memory."""
     client = FakeClient()
     community_sharing._share_sighting(client, CFG_ON, _finding().to_dict(), REPORTER)
-    assert len(client.shares) == 1
-    cg_id, _name, _q = client.shares[0]
-    assert cg_id == DEV_GRAPH
-    assert cg_id != CFG_ON.context_graph_id
+    assert [(cg_id, name.startswith("report-")) for cg_id, name, _q in client.shares] == [(CFG_ON.context_graph_id, True)]
 
 
 # ---------------------------------------------------------------------------
@@ -213,7 +202,7 @@ def test_pipeline_shares_when_gate_open(monkeypatch, bb_home):
 
 
 def test_pipeline_never_shares_when_report_off(monkeypatch, bb_home):
-    cfg = BlackboxConfig(report=False, community_graph_id=DEV_GRAPH)
+    cfg = BlackboxConfig(report=False, context_graph_id=DEV_GRAPH)
     spawned, _ = _run_pipeline(monkeypatch, cfg, [_finding()])
     assert spawned == []
 
@@ -244,7 +233,7 @@ def test_cooldown_suppresses_repeat_share(monkeypatch, bb_home):
 
 def test_daily_cap_enforced_at_call_site(monkeypatch, bb_home):
     """KI-002 part 2: allow_report() finally has its caller."""
-    cfg = BlackboxConfig(report=True, community_graph_id=DEV_GRAPH, daily_report_limit=1)
+    cfg = BlackboxConfig(report=True, context_graph_id=DEV_GRAPH, daily_report_limit=1)
     findings = [_finding("dep:npm:a@1"), _finding("dep:npm:b@1"), _finding("dep:npm:c@1")]
     spawned, _ = _run_pipeline(monkeypatch, cfg, findings)
     assert len(spawned) == 1
@@ -370,7 +359,7 @@ class _SendClient:
     def __init__(self, result=None, raises=None):
         self.result, self.raises, self.calls = result, raises, 0
 
-    def share_knowledge_asset(self, graph, name, quads):
+    def share_knowledge_asset(self, graph, name, quads, sub_graph="reports"):
         self.calls += 1
         if self.raises is not None:
             raise self.raises

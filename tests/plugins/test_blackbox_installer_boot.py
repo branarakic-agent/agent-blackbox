@@ -129,6 +129,7 @@ def test_dashboard_service_respects_auto_dashboard_off():
     assert body.index('case "$BLACKBOX_AUTO_DASHBOARD"') < body.index("[Unit]")
 
 
+@pytest.mark.live_system_guard_bypass   # systemctl is a stub that records its arguments
 def test_dashboard_service_is_written_and_enabled_on_a_systemd_machine(tmp_path):
     """Runs the real function on a Linux-shaped sandbox: a non-root user gets a user
     unit under $HOME, and systemctl is asked to enable it (stub records the calls)."""
@@ -149,7 +150,7 @@ def test_dashboard_service_is_written_and_enabled_on_a_systemd_machine(tmp_path)
         "ok() { echo \"OK $*\"; }", "warn() { echo \"WARN $*\"; }", "step() { :; }",
         "id() { echo 1000; }",           # a non-root user: the unit goes under $HOME
         f"HOME={tmp_path}", f"HERMES_HOME={tmp_path}/.hermes", f"HERMES_BIN={stubs}/hermes",
-        "BLACKBOX_AUTO_DASHBOARD=1",
+        "BLACKBOX_AUTO_DASHBOARD=1", "BLACKBOX_DASHBOARD_RESTART_PENDING=false",
         _installer_constant("BLACKBOX_SERVICE_SYSTEM_PATH"),
         _dashboard_function(),
         "register_dashboard_service",
@@ -160,7 +161,9 @@ def test_dashboard_service_is_written_and_enabled_on_a_systemd_machine(tmp_path)
     assert result.returncode == 0, result.stderr
     unit = tmp_path / ".config" / "systemd" / "user" / "blackbox-dashboard.service"
     assert f"ExecStart={stubs}/hermes blackbox dashboard" in unit.read_text()
-    assert "--user enable --now blackbox-dashboard" in calls.read_text()
+    # a new unit is enabled AND started now, through systemd (KI-455: restart = start for a new unit)
+    assert "--user enable blackbox-dashboard" in calls.read_text()
+    assert "--user restart blackbox-dashboard" in calls.read_text()
     # a node the dashboard's sync restarts inherits this PATH: it must reach lsof too (KI-427)
     assert "/usr/sbin" in unit.read_text().split("Environment=PATH=", 1)[1].splitlines()[0].split(":")
 
@@ -190,12 +193,16 @@ def _start_dashboard_run(tmp_path, *, running: bool, marker: str | None):
     (stubs / "curl").write_text(f"#!/bin/sh\nexit {0 if running else 7}\n")
     (stubs / "curl").chmod(0o755)
     launched = tmp_path / "launched"
+    (stubs / "uname").write_text("#!/bin/sh\necho Linux\n")   # no machine's own launchd or units
+    (stubs / "uname").chmod(0o755)
     func = re.search(r"^start_dashboard\(\) \{.*?\n\}", _src(), re.DOTALL | re.MULTILINE).group(0)
     script = "\n".join([
         "set -euo pipefail", "ok() { :; }", "warn() { :; }", "step() { :; }", "heading() { :; }",
         "sleep() { :; }", f'run_detached() {{ echo launched >> "{launched}"; }}',
+        f"HOME={tmp_path}", f"BLACKBOX_SYSTEMD_DIR={tmp_path}/systemd",
         f"HERMES_HOME={home}", f"REPO_DIR={repo}", "HERMES_BIN=/bin/true", "BLACKBOX_AUTO_DASHBOARD=1",
-        func, "start_dashboard",
+        "BLACKBOX_DASHBOARD_RESTART_PENDING=false", _installer_constant("BLACKBOX_DASHBOARD_LAUNCHD_LABEL"),
+        _top_level_function("blackbox_dashboard_supervisor"), func, "start_dashboard",
     ])
     result = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
                             env={"PATH": f"{stubs}:/usr/bin:/bin"}, check=False)

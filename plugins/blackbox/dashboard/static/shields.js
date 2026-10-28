@@ -178,7 +178,8 @@
         var outcome = OUTCOMES[str(e.outcome)] ? str(e.outcome) : "flagged";
         return '<button type="button" class="wp-ev" data-shield-events="' + esc(card.id) + '" data-event-id="' + esc(e.identifier) +
           '" data-event-ts="' + esc(str(e.ts)) + '" title="Open the full report"><span class="o ' + outcome + '">' + esc(outcome) + "</span><span>" +
-          logoHTML(str(e.logo), str(e.title)) + esc(str(e.title) || str(e.identifier)) + '</span><span class="wp-sub">' + esc(deps.shortWhen(e.ts)) +
+          logoHTML(str(e.logo), str(e.title)) + esc(str(e.title) || str(e.identifier)) +
+          (e.sandbox ? ' <span class="sb-tag">SANDBOX</span>' : "") + '</span><span class="wp-sub">' + esc(deps.shortWhen(e.ts)) +
           '</span><span class="wp-sub">' + esc(e.tool ? "via " + e.tool : "") + "</span></button>";
       });
       var body = events === undefined ? '<div class="wp-sub">Loading…</div>'

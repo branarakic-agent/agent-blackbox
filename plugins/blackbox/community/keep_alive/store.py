@@ -39,6 +39,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from ...kernel import constants
 from ..statements.lifetimes import lifetime_days
 from .epochs import Epoch
+from ...kernel.bounded_files import atomic_write
 
 logger = logging.getLogger(__name__)
 
@@ -169,8 +170,6 @@ class LiveReportStore:
     def _save(self, live: list[LiveReport]) -> None:
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
-            tmp = self._path.with_name(f"{self._path.name}.tmp.{os.getpid()}.{secrets.token_hex(6)}")
-            tmp.write_text(json.dumps({"live": [r.as_json() for r in live]}), encoding="utf-8")
-            os.replace(tmp, self._path)
+            atomic_write(self._path, json.dumps({"live": [r.as_json() for r in live]}))
         except OSError as exc:   # fail-open: an unwritable home only loses the keep-alive memory
             logger.warning("blackbox: could not save the live-reports store (%s)", exc)
